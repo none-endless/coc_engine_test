@@ -43,7 +43,6 @@ class E1InputInfo(BaseModel):
 	source_id: str = Field(default="", description="来源实体 ID（如 char-player-0000）")
 	input_type: InputType = Field(description="输入类型")
 	raw_text: str = Field(default="", description="原始输入文本")
-	normalized_text: str = Field(default="", description="规范化后的输入文本")
 	command: Optional[str] = Field(default=None, description="元命令名称（若 input_type=meta_command）")
 	command_args: Dict[str, Any] = Field(default_factory=dict, description="元命令参数")
 	metadata: Dict[str, Any] = Field(default_factory=dict, description="额外调试/追踪信息")
@@ -56,17 +55,12 @@ class E2IntentInfo(BaseModel):
 	"""
 
 	intent: str = Field(default="", description="主意图")
-	confidence: float = Field(default=0.0, description="置信度 0-1")
-	slots: Dict[str, Any] = Field(default_factory=dict, description="结构化槽位")
-	routing_hint: Optional[str] = Field(default=None, description="链路路由建议")
+	routing_hint: Optional[str] = Field(default=None, description="链路路由建议:是否需要鉴定,哪种鉴定类型,对抗还是数值,不需要鉴定就为null,需要就为num或者aginst")
+	atirrbutes: str = Field(default=None,description="需要进行鉴定的属性名称")
+	charlist : str = Field(default="",description="如果要对抗鉴定对象的id")
+	hard: str = Field(default="",description="鉴定难度:普通,困难.简单")
 
 
-class RuleFact(BaseModel):
-	"""单条规则事实。"""
-
-	fact_key: str = Field(description="事实键")
-	fact_value: Any = Field(description="事实值")
-	reason: str = Field(default="", description="事实来源/解释")
 
 
 class E3RuleResult(BaseModel):
@@ -75,20 +69,8 @@ class E3RuleResult(BaseModel):
 	由 rule_system 产出的客观判断。
 	"""
 
-	accepted: bool = Field(default=True, description="规则是否通过")
-	facts: List[RuleFact] = Field(default_factory=list, description="规则事实列表")
-	violations: List[str] = Field(default_factory=list, description="违规项")
-	rule_trace: Dict[str, Any] = Field(default_factory=dict, description="规则执行追踪")
+	sucusess: str = Field(description="成功,失败,还是大成功,大失败")
 
-
-class StepDelta(BaseModel):
-	"""单条步骤结算变化。"""
-
-	target_id: str = Field(description="目标实体 ID")
-	field_path: str = Field(description="变更字段路径")
-	operation: str = Field(description="操作类型，如 SET/ADD/REMOVE")
-	value: Any = Field(description="变更值")
-	reason: str = Field(default="", description="变更原因")
 
 
 class E4StepResult(BaseModel):
@@ -99,32 +81,17 @@ class E4StepResult(BaseModel):
 
 	producer: str = Field(description="产生该 e4 的 agent 名称")
 	summary: str = Field(default="", description="本步骤摘要")
-	deltas: List[StepDelta] = Field(default_factory=list, description="状态变化列表")
 	extra_npc_context: Dict[str, Any] = Field(default_factory=dict, description="scheduler 给 performer 的额外信息")
 	metadata: Dict[str, Any] = Field(default_factory=dict, description="扩展信息")
 
-
-class CausalityNode(BaseModel):
-	"""回合因果链节点。"""
-
-	step: str = Field(description="步骤名称")
-	agent: str = Field(description="执行该步骤的 agent")
-	timestamp: int = Field(description="时间戳")
-	input_ref: Optional[str] = Field(default=None, description="输入引用")
-	output_ref: Optional[str] = Field(default=None, description="输出引用")
-	note: str = Field(default="", description="备注")
 
 
 class E7CausalityChain(BaseModel):
 	"""
 	e7: 回合因果链
-	记录 e4 等关键步骤的时序关系。
+	记录narrative_agent产生的叙事输出以及其时序关系。
 	"""
-
-	turn: int = Field(description="回合号")
-	chain_id: str = Field(default="", description="因果链 ID")
-	nodes: List[CausalityNode] = Field(default_factory=list, description="时序节点")
-	tags: List[str] = Field(default_factory=list, description="标签")
+	
 
 
 class FallbackError(BaseModel):
