@@ -20,7 +20,8 @@ from .input.agent_chain_input import (
     NpcPerformerAgentChainInput,
     NarrativeAgentChainInput,
     MergerAgentChainInput,
-    E4StepResult,
+    E4EvolutionStepResult,
+    E4SchedulerStepResult,
     E7CausalityChain,
     FallbackError,
 )
@@ -46,7 +47,7 @@ class SystemExecutionMeta(BaseModel):
     """仅系统侧使用的执行元信息。"""
 
     turn: int = Field(default=0, description="回合号")
-    trace_id: int = Field(default="", description="链路追踪中的第几个输入下的信息,玩家输入产生的输出是1依次类推 ") 
+    trace_id: int = Field(default=0, description="链路追踪中的第几个输入下的信息,玩家输入产生的输出是1依次类推")
     debug: Dict[str, str] = Field(default_factory=dict, description="调试信息")
 
 
@@ -71,10 +72,15 @@ class E3LlmView(BaseModel):
     success: str = Field(default="", description="规则结算结果")
 
 
-class E4LlmView(BaseModel):
-    """e4 的 LLM 精简视图。"""
+class E4EvolutionLlmView(BaseModel):
+    """e4 的 LLM 精简视图（来自 evolution）。"""
 
     summary: str = Field(default="", description="步骤摘要")
+
+
+class E4SchedulerLlmView(BaseModel):
+    """e4 的 LLM 精简视图（来自 scheduler）。"""
+
     extra_npc_context: Dict[str, Optional[str]] = Field(default_factory=dict, description="scheduler 给 performer 的额外上下文,其中key为npc的id,对于将要激活不过不需要提供额外上下文的只提供id不提供上下文,也即value为null")
 
 
@@ -148,7 +154,7 @@ class StateAgentLlmInput(BaseModel):
     - 重试预算/次数等控制信息仍在 system_input，不暴露给 LLM。
     """
 
-    e4: E4LlmView = Field(description="步骤结算（e4 精简）")
+    e4: E4EvolutionLlmView = Field(description="步骤结算（e4 精简，来自 evolution）")
     world_info: StateAgentWorldView = Field(description="世界信息（描述层 + 数值层）")
     previous_error: Optional[StateErrorFeedback] = Field(default=None, description="上一轮失败原因与修正提示")
 
@@ -170,7 +176,7 @@ class StateAgentInput(BaseModel):
 class NpcSchedulerAgentLlmInput(BaseModel):
     """npcscheduler 的 LLM 输入。"""
 
-    e4: E4LlmView = Field(description="链路输入（e4 精简）")
+    e4: E4EvolutionLlmView = Field(description="链路输入（e4 精简，来自 evolution）")
     world_info: NpcSchedulerWorldView = Field(description="世界信息（切片）")
     narrative_info: NarrativeInfo = Field(description="叙事信息")
 
@@ -191,7 +197,7 @@ class NpcSchedulerAgentInput(BaseModel):
 class NpcPerformerAgentLlmInput(BaseModel):
     """npcperformer 的 LLM 输入。"""
 
-    e4: E4LlmView = Field(description="链路输入（e4 精简）")
+    e4: E4SchedulerLlmView = Field(description="链路输入（e4 精简，来自 scheduler）")
     e1: E1LlmView = Field(description="链路输入（e1 精简）")
     world_info: NpcWorldView = Field(description="世界信息（NPC 切片）")
     agent_memory: MemoryForNpc = Field(description="NPC 记忆")
@@ -213,7 +219,7 @@ class NpcPerformerAgentInput(BaseModel):
 class NarrativeAgentLlmInput(BaseModel):
     """narrative 的 LLM 输入。"""
 
-    e4: E4LlmView = Field(description="链路输入（e4 精简）")
+    e4: E4EvolutionLlmView = Field(description="链路输入（e4 精简，来自 evolution）")
     world_info: NarrativeWorldView = Field(description="世界信息（切片）")
     narrative_info: NarrativeInfo = Field(description="叙事信息")
 
@@ -267,7 +273,7 @@ class TurnAgentInputs(BaseModel):
 class NarrativeProjectionE4(BaseModel):
     """E4 叙事投影（narrative 输出给 merger 前的片段容器）。"""
 
-    e4_from_narrative: E4StepResult = Field(description="由 narrative 产出的叙事片段表达")
+    e4_from_narrative: E4EvolutionStepResult = Field(description="由 narrative 产出的叙事片段表达")
 
 
 class WorldProjectionE5(BaseModel):

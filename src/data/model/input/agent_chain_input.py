@@ -53,11 +53,11 @@ class E2IntentInfo(BaseModel):
 	"""
 
 	intent: str = Field(default="", description="主意图")
-	routing_hint: Optional[Enum] = Field(default=None, description="链路路由建议:是否需要鉴定,哪种鉴定类型,对抗还是数值,不需要鉴定就为null,需要就为num或者aginst")
-	atirrbutes: str = Field(default=None,description="需要进行鉴定的属性名称")
-	charlist : str = Field(default="",description="如果要对抗鉴定对象的id")
-	hard: Enum = Field(default="",description="鉴定难度:普通,困难.简单")
-	is_diloggue : Optional[str] = Field(default="",description="玩家是否是在向dm进行对话,或者玩家行为是否应该被拦截,如果是则这里填dm的回复,同时鉴定相关字段应该为null,否则这里为null")
+	routing_hint: Optional[str] = Field(default=None, description="链路路由建议:是否需要鉴定,哪种鉴定类型,对抗还是数值,不需要鉴定就为null,需要就为num或者aginst")
+	attributes: Optional[str] = Field(default=None, description="需要进行鉴定的属性名称")
+	charlist: Optional[str] = Field(default=None, description="如果要对抗鉴定对象的id")
+	hard: Optional[str] = Field(default=None, description="鉴定难度:普通,困难.简单")
+	is_dialogue: Optional[str] = Field(default=None, description="玩家是否是在向dm进行对话,或者玩家行为是否应该被拦截,如果是则这里填dm的回复,同时鉴定相关字段应该为null,否则这里为null")
 
 
 
@@ -68,18 +68,26 @@ class E3RuleResult(BaseModel):
 	由 rule_system 产出的客观判断。
 	"""
 
-	sucusess: str = Field(description="成功,失败,还是大成功,大失败")
+	success: str = Field(default="", description="成功,失败,还是大成功,大失败")
 
 
 
-class E4StepResult(BaseModel):
+class E4EvolutionStepResult(BaseModel):
 	"""
 	e4: 步骤结算
-	由 evolution_agent / npc_scheduler 产生的推演结算。
+	由 evolution_agent 产生的推演结算。
 	"""
 
 	summary: str = Field(default="", description="本步骤摘要")
-	extra_npc_context: Dict[str, Any] = Field(default_factory=dict, description="scheduler 给 performer 的额外信息")
+
+
+class E4SchedulerStepResult(BaseModel):
+	"""
+	e4: 步骤结算
+	由 npc_scheduler 产生、给 npc_performer 消费的额外上下文。
+	"""
+
+	extra_npc_context: Dict[str, Optional[str]] = Field(default_factory=dict, description="scheduler 给 performer 的额外信息")
 
 
 
@@ -88,7 +96,7 @@ class E7CausalityChain(BaseModel):
 	e7: 回合因果链
 	记录narrative_agent产生的叙事输出以及其时序关系。
 	"""
-	narrative_list = List[Dict[str,str]] = Field(default="",description="narrative_agent的输出列表,其中列表中的key为产生叙事的轮次从1-n递增,也即trace_id")
+	narrative_list: List[Dict[str, str]] = Field(default_factory=list, description="narrative_agent的输出列表,其中列表中的key为产生叙事的轮次从1-n递增,也即trace_id")
 	
 
 
@@ -126,27 +134,27 @@ class EvolutionAgentChainInput(BaseModel):
 class StateChangeAgentChainInput(BaseModel):
 	"""state: e4 + fallbackerror"""
 
-	e4: E4StepResult = Field(description="步骤结算")
+	e4: E4EvolutionStepResult = Field(description="步骤结算（来自 evolution）")
 	fallbackerror: Optional[FallbackError] = Field(default=None, description="失败重试/降级信息")
 
 
 class NpcSchedulerAgentChainInput(BaseModel):
 	"""npcscheduler: e4"""
 
-	e4: E4StepResult = Field(description="步骤结算")
+	e4: E4EvolutionStepResult = Field(description="步骤结算（来自 evolution）")
 
 
 class NpcPerformerAgentChainInput(BaseModel):
 	"""npcperformer: e4(来自 scheduler 的额外信息) + e1"""
 
-	e4: E4StepResult = Field(description="步骤结算（含 scheduler 提供的额外上下文）")
+	e4: E4SchedulerStepResult = Field(description="步骤结算（含 scheduler 提供的额外上下文）")
 	e1: E1InputInfo = Field(description="输入信息")
 
 
 class NarrativeAgentChainInput(BaseModel):
 	"""narrative: e4(来自 evolution)"""
 
-	e4: E4StepResult = Field(description="步骤结算（来自 evolution）")
+	e4: E4EvolutionStepResult = Field(description="步骤结算（来自 evolution）")
 
 
 class MergerAgentChainInput(BaseModel):

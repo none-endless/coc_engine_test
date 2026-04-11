@@ -499,3 +499,73 @@ SET map-cellar-0001.connections[0].is_locked = true
    - 输出系统降级提示
    - 终止当前交互，等待玩家重新输入
 6. 错误日志需记录：`turn_id`、`patch_id`、错误类型、错误消息、重试次数、时间戳。
+
+## 5. 配置管理规范
+
+### 5.1 配置来源优先级
+
+命令行参数 > 环境变量 > 配置文件 > 默认值
+
+### 5.2 配置文件格式（YAML）
+
+```yaml
+# config.yaml
+
+# LLM 配置
+llm:
+  model: "gpt-4"                    # 模型名称
+  temperature: 0.7                  # 生成温度
+  max_tokens: 2000                  # 最大token数
+  timeout: 30                      # 超时时间（秒）
+  api_base: "https://api.openai.com/v1"  # API地址
+
+# 系统配置
+system:
+  max_retry_count: 3                # 状态变更最大重试次数
+  retry_timeout_ms: 5000            # 重试超时（毫秒）
+  fallback_error: "系统繁忙，请稍后重试"
+  snapshot_interval: 10             # 快照保存间隔（回合数）
+
+# Agent 配置
+agent:
+  dm:
+    memory_turns: 5                 # 对话记忆保留回合数
+  npc:
+    memory_turns: 15                # NPC短期记忆保留回合数
+    shortlog_turns: 30              # NPC日志保留回合数
+  narrative:
+    recent_turns: 5                 # 叙事最近保留回合数
+```
+
+### 5.3 魔法数字配置项
+
+| 配置项 | 默认值 | 说明 |
+|-------|-------|------|
+| `system.max_retry_count` | 3 | 重试次数 |
+| `system.retry_timeout_ms` | 5000 | 超时毫秒 |
+| `agent.npc.memory_turns` | 15 | NPC短期记忆回合数 |
+| `agent.npc.shortlog_turns` | 30 | NPC日志回合数 |
+| `agent.dm.memory_turns` | 5 | DM对话记忆回合数 |
+| `agent.narrative.recent_turns` | 5 | 叙事最近回合数 |
+| `description.add_interval` | 10 | 描述变更合并间隔回合数 |
+
+### 5.4 配置表单
+
+提供 `config.schema.yaml` 用于0代码配置验证：
+
+```yaml
+# config.schema.yaml
+type: object
+properties:
+  llm:
+    type: object
+    properties:
+      model: { type: string, enum: ["gpt-4", "gpt-3.5-turbo", "claude-3"] }
+      temperature: { type: number, minimum: 0, maximum: 2 }
+      max_tokens: { type: integer, minimum: 100, maximum: 8000 }
+  system:
+    type: object
+    properties:
+      max_retry_count: { type: integer, minimum: 1, maximum: 10 }
+      retry_timeout_ms: { type: integer, minimum: 1000, maximum: 30000 }
+```
