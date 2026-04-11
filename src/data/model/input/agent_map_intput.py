@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any, Union, Literal, TYPE_CHECKING
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from enum import Enum, Flag, auto
+from ..base import DescriptionAddItem
 
 # 避免循环导入，仅在类型检查时导入
 if TYPE_CHECKING:
@@ -136,7 +137,9 @@ class ConnectionBrief(BaseModel):
     id: str = Field(description="连接 ID")
     name: str = Field(description="连接名称")
     direction: str = Field(description="方向")
-    target_map_id: str = Field(description="目标地图 ID")
+    target_map_id: Optional[str] = Field(default=None, description="目标地图 ID（未知时为 null）")
+    is_locked: bool = Field(default=False, description="是否锁定")
+    condition: Optional[str] = Field(default=None, description="连接条件表达式")
 
 
 class MapSlice(BaseModel):
@@ -200,7 +203,7 @@ class TurnViews(BaseModel):
     回合视图容器
     包含本回合所有 Agent 的预计算视图
     """
-    turn: int = Field(description="当前回合数")
+    turn_id: int = Field(description="当前回合数")
     dm_view: "DMWorldView" = Field(description="DM 世界视图")
     state_agent_view: "StateAgentWorldView" = Field(description="StateAgent 世界视图")
     npc_scheduler_view: "NpcSchedulerWorldView" = Field(description="NpcScheduler 世界视图")

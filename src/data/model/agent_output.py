@@ -24,6 +24,13 @@ class AgentSystemOutputBase(BaseModel):
 	"""所有系统输出的基类。"""
 
 
+class TurnTraceSystemOutputBase(AgentSystemOutputBase):
+	"""包含 turn_id/trace_id 的系统输出基类。"""
+
+	trace_id: int = Field(default=0, description="链路追踪编号")
+	turn_id: int = Field(default=0, description="回合编号")
+
+
 class AgentOutputEnvelope(BaseModel):
 	"""输出封装基类。"""
 
@@ -71,11 +78,8 @@ class NarrativeAgentLlmOutput(AgentLlmOutputBase):
 	narrative_str: str = Field(default="", description="叙事文本")
 
 
-class NarrativeAgentSystemOutput(AgentSystemOutputBase):
+class NarrativeAgentSystemOutput(TurnTraceSystemOutputBase):
 	"""narrative_agent 的系统输出。"""
-
-	turn_id: int = Field(default=0, description="回合编号")
-	trace_id: int = Field(default=0, description="链路追踪编号")
 
 
 class NarrativeAgentOutput(AgentOutputEnvelope):
@@ -121,6 +125,8 @@ class PatchMeta(BaseModel):
 	trace_id: int = Field(default=0, description="链路追踪编号")
 	turn_id: int = Field(default=0, description="回合编号")
 	retry_seq: int = Field(default=0, description="重试序号")
+	patch_id: Optional[str] = Field(default=None, description="补丁唯一标识")
+	expected_version: Optional[int] = Field(default=None, description="期望世界版本")
 
 
 class StateAgentLlmOutput(AgentLlmOutputBase):
@@ -143,6 +149,7 @@ class StateAgentOutput(AgentOutputEnvelope):
 class NpcSchedulerStepResultOutput(BaseModel):
 	"""npc_scheduler 步骤结果输出。"""
 
+	summary: str = Field(default="", description="来自 evolution 的步骤摘要")
 	extra_npc_context: Dict[str, Optional[str]] = Field(default_factory=dict, description="scheduler 给 performer 的额外上下文,key表示需要激活的npcid,value是从summary中总结提供给npc的额外信息,如果没有可以填null")
 
 
@@ -152,11 +159,8 @@ class NpcSchedulerAgentLlmOutput(AgentLlmOutputBase):
 	step_result: NpcSchedulerStepResultOutput = Field(default_factory=NpcSchedulerStepResultOutput, description="调度步骤结果")
 
 
-class NpcSchedulerAgentSystemOutput(AgentSystemOutputBase):
+class NpcSchedulerAgentSystemOutput(TurnTraceSystemOutputBase):
 	"""npc_scheduler_agent 的系统输出。"""
-
-	trace_id: int = Field(default=0, description="链路追踪编号")
-	turn_id: int = Field(default=0, description="回合编号")
 
 
 class NpcSchedulerAgentOutput(AgentOutputEnvelope):
@@ -167,17 +171,15 @@ class NpcSchedulerAgentOutput(AgentOutputEnvelope):
 class NpcPerformerAgentLlmOutput(AgentLlmOutputBase):
 	"""npc_performer_agent 的 LLM 输出。"""
 
-	raw_input: str = Field(default="", description="npc 输出行为文本")
+	action_text: str = Field(default="", description="npc 输出行为文本")
 	change_basic_goal: Optional[str] = Field(default=None, description="新的基础目标，无则为 null")
-	change_activate_goal: Optional[str] = Field(default=None, description="新的当前激活目标，无则为 null")
+	change_active_goal: Optional[str] = Field(default=None, description="新的当前活跃目标，无则为 null")
 
 
-class NpcPerformerAgentSystemOutput(AgentSystemOutputBase):
+class NpcPerformerAgentSystemOutput(TurnTraceSystemOutputBase):
 	"""npc_performer_agent 的系统输出。"""
 
 	id: str = Field(default="", description="角色 id")
-	trace_id: int = Field(default=0, description="链路追踪编号")
-	turn_id: int = Field(default=0, description="回合编号")
 
 
 class NpcPerformerAgentOutput(AgentOutputEnvelope):

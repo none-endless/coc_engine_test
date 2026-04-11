@@ -56,7 +56,7 @@ class SystemRetryControl(BaseModel):
 
     can_retry: bool = Field(default=False, description="是否允许重试")
     retry_budget: int = Field(default=0, description="剩余重试次数")
-    fallbackerror: Optional[FallbackError] = Field(default=None, description="最近一次失败信息")
+    fallback_error: Optional[FallbackError] = Field(default=None, description="最近一次失败信息")
 
 
 class E1LlmView(BaseModel):
@@ -150,19 +150,19 @@ class StateAgentLlmInput(BaseModel):
     保留 e4 + world_info + 可行动错误反馈。
 
     说明：
-    - previous_error 用于告诉 state_change 上一轮失败原因，便于修正。
+    - fallback_error 用于告诉 state_change 上一轮失败原因，便于修正。
     - 重试预算/次数等控制信息仍在 system_input，不暴露给 LLM。
     """
 
     e4: E4EvolutionLlmView = Field(description="步骤结算（e4 精简，来自 evolution）")
     world_info: StateAgentWorldView = Field(description="世界信息（描述层 + 数值层）")
-    previous_error: Optional[StateErrorFeedback] = Field(default=None, description="上一轮失败原因与修正提示")
+    fallback_error: Optional[StateErrorFeedback] = Field(default=None, description="上一轮失败原因与修正提示")
 
 
 class StateAgentSystemInput(BaseModel):
     """state_change 的系统输入。"""
 
-    chain_raw: Optional[StateChangeAgentChainInput] = Field(default=None, description="原始链路输入（含 fallbackerror）")
+    chain_raw: Optional[StateChangeAgentChainInput] = Field(default=None, description="原始链路输入（含 fallback_error）")
     retry_control: SystemRetryControl = Field(default_factory=SystemRetryControl, description="系统重试控制")
     execution: SystemExecutionMeta = Field(default_factory=SystemExecutionMeta, description="系统执行元信息")
 

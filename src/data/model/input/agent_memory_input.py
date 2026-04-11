@@ -54,6 +54,18 @@ class DmMemory(BaseModel):
         description="完整对话日志，仅用于 debug 与回溯"
     )
 
+    def _append_with_rollover(self, entry: "DialogueEntry", max_recent: int = 5) -> None:
+        """追加 recent，超出阈值后把最早条目压入 log。"""
+        self.dialogues.append(entry)
+        if len(self.dialogues) > max_recent:
+            oldest = self.dialogues.pop(0)
+            self.dialogue_log.append(DialogueLogItem(
+                turn=oldest.turn,
+                timestamp=int(datetime.now().timestamp()),
+                speaker=oldest.speaker,
+                content=oldest.content,
+            ))
+
     def add_dialogue(self, turn: int, speaker: str, content: str) -> None:
         """
         添加对话记录
@@ -63,22 +75,11 @@ class DmMemory(BaseModel):
             speaker: 说话者 ID
             content: 对话内容
         """
-        # 添加到 dialogues
-        self.dialogues.append(DialogueEntry(
+        self._append_with_rollover(DialogueEntry(
             turn=turn,
             speaker=speaker,
             content=content
         ))
-
-        # 如果 dialogues 超过5条，将最早的条目移到 log 中
-        if len(self.dialogues) > 5:
-            oldest = self.dialogues.pop(0)
-            self.dialogue_log.append(DialogueLogItem(
-                turn=oldest.turn,
-                timestamp=int(datetime.now().timestamp()),
-                speaker=oldest.speaker,
-                content=oldest.content
-            ))
 
     def get_recent_dialogues(self, count: int = 5) -> List["DialogueEntry"]:
         """
@@ -90,4 +91,4 @@ class DmMemory(BaseModel):
         Returns:
             最近 n 条对话记录
         """
-        return self.dialogues[-count:] if len(self.dialogues) <= count else self.dialogues[-count:]
+        return self.dialogues[-count:]

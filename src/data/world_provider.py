@@ -64,12 +64,49 @@ class WorldDataProvider:
             TurnViews: 包含所有 Agent 视图的容器
         """
         return TurnViews(
-            turn=turn,
+            turn_id=turn,
             dm_view=self._get_dm_view(current_map_id),
             state_agent_view=self._get_state_agent_view(current_map_id),
             npc_scheduler_view=self._get_npc_scheduler_view(current_map_id),
             narrative_view=self._get_narrative_view(current_map_id),
         )
+
+    def _get_visible_entities_at_map(self, map_id: str):
+        """
+        获取当前地图可见的角色和物品。
+
+        规则：
+        - 角色 location 必须等于 map_id。
+        - 物品 location 必须等于 map_id（在角色身上的物品不可见）。
+        """
+        characters = [
+            char for char in self.world_state.get_characters_at(map_id)
+            if char.location == map_id
+        ]
+        items = [
+            item for item in self.world_state.get_items_at(map_id)
+            if item.location == map_id
+        ]
+        return characters, items
+
+    def _resolve_connection_target_map_id(self, current_map_id: str, conn: Any) -> Optional[str]:
+        """
+        解析连接的目标地图 ID。
+
+        说明：
+        - 不再将 condition 映射为 target_map_id。
+        - 优先使用连接对象上显式 target_map_id 字段。
+        - 若不存在，则仅在 conn.id 属于相邻地图 ID 时使用 conn.id。
+        """
+        explicit_target = getattr(conn, "target_map_id", None)
+        if explicit_target:
+            return explicit_target
+
+        adjacent_ids = set(self.world_state.get_adjacent_map_ids(current_map_id))
+        if conn.id in adjacent_ids:
+            return conn.id
+
+        return None
 
     def _build_description_view_for_agent(self, description: "Description") -> DescriptionViewForAgent:
         """
@@ -113,16 +150,7 @@ class WorldDataProvider:
             DMWorldView: 包含地图、角色、物品的描述信息
         """
         map_entity = self.world_state.get_map(map_id)
-        # 只获取在当前地图上的角色
-        characters = [
-            char for char in self.world_state.get_characters_at(map_id)
-            if char.location == map_id
-        ]
-        # 只获取在当前地图上的物品（物品在人物身上时不可见）
-        items = [
-            item for item in self.world_state.get_items_at(map_id)
-            if item.location == map_id
-        ]
+        characters, items = self._get_visible_entities_at_map(map_id)
 
         return DMWorldView(
             map_id=map_entity.id,
@@ -213,10 +241,7 @@ class WorldDataProvider:
         ))
 
         # 2. 角色实体（只获取在当前地图上的）
-        characters = [
-            char for char in self.world_state.get_characters_at(map_id)
-            if char.location == map_id
-        ]
+        characters, items = self._get_visible_entities_at_map(map_id)
         for char in characters:
             char_writable_fields = [
                 WritableFieldInfo(
@@ -269,10 +294,6 @@ class WorldDataProvider:
             ))
 
         # 3. 物品实体（只获取在当前地图上的，物品在人物身上时不可见）
-        items = [
-            item for item in self.world_state.get_items_at(map_id)
-            if item.location == map_id
-        ]
         for item in items:
             item_writable_fields = [
                 WritableFieldInfo(
@@ -380,18 +401,7 @@ class WorldDataProvider:
             MapSlice: 地图切片
         """
         map_entity = self.world_state.get_map(map_id)
-
-        # 只获取在当前地图上的角色
-        characters = [
-            char for char in self.world_state.get_characters_at(map_id)
-            if char.location == map_id
-        ]
-
-        # 只获取在当前地图上的物品（物品在人物身上时不可见）
-        items = [
-            item for item in self.world_state.get_items_at(map_id)
-            if item.location == map_id
-        ]
+        characters, items = self._get_visible_entities_at_map(map_id)
 
         # 构建连接简要信息
         connections = [
@@ -399,7 +409,9 @@ class WorldDataProvider:
                 id=conn.id,
                 name=conn.name,
                 direction=conn.direction,
-                target_map_id=conn.condition or ""  # 简化处理，实际应解析 condition
+                target_map_id=self._resolve_connection_target_map_id(map_id, conn),
+                is_locked=conn.is_locked,
+                condition=conn.condition,
             )
             for conn in map_entity.connections
         ]

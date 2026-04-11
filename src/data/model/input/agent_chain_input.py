@@ -38,7 +38,7 @@ class E1InputInfo(BaseModel):
 	输入系统产出的原始输入与路由元信息。
 	"""
 
-	turn: int = Field(description="回合号")
+	turn_id: int = Field(description="回合号")
 	source_id: str = Field(default="", description="来源实体 ID（如 char-player-0000）")
 	raw_text: str = Field(default="", description="原始输入文本")
 	command: Optional[str] = Field(default=None, description="元命令名称（若 input_type=meta_command）")
@@ -55,9 +55,9 @@ class E2IntentInfo(BaseModel):
 	intent: str = Field(default="", description="主意图")
 	routing_hint: Optional[str] = Field(default=None, description="链路路由建议:是否需要鉴定,哪种鉴定类型,对抗还是数值,不需要鉴定就为null,需要就为num或者aginst")
 	attributes: Optional[str] = Field(default=None, description="需要进行鉴定的属性名称")
-	charlist: Optional[str] = Field(default=None, description="如果要对抗鉴定对象的id")
-	hard: Optional[str] = Field(default=None, description="鉴定难度:普通,困难.简单")
-	is_dialogue: Optional[str] = Field(default=None, description="玩家是否是在向dm进行对话,或者玩家行为是否应该被拦截,如果是则这里填dm的回复,同时鉴定相关字段应该为null,否则这里为null")
+	against_char_id: Optional[str] = Field(default=None, description="对抗鉴定对象的角色 id")
+	difficulty: Optional[str] = Field(default=None, description="鉴定难度:普通,困难,简单")
+	dm_reply: Optional[str] = Field(default=None, description="若该输入应由 DM 直接回复，则填回复文本；否则为 null")
 
 
 
@@ -68,7 +68,7 @@ class E3RuleResult(BaseModel):
 	由 rule_system 产出的客观判断。
 	"""
 
-	success: str = Field(default="", description="成功,失败,还是大成功,大失败")
+	success: Enum = Field(default="", description="成功,失败,还是大成功,大失败")
 
 
 
@@ -132,10 +132,10 @@ class EvolutionAgentChainInput(BaseModel):
 
 
 class StateChangeAgentChainInput(BaseModel):
-	"""state: e4 + fallbackerror"""
+	"""state: e4 + fallback_error"""
 
 	e4: E4EvolutionStepResult = Field(description="步骤结算（来自 evolution）")
-	fallbackerror: Optional[FallbackError] = Field(default=None, description="失败重试/降级信息")
+	fallback_error: Optional[FallbackError] = Field(default=None, description="失败重试/降级信息")
 
 
 class NpcSchedulerAgentChainInput(BaseModel):

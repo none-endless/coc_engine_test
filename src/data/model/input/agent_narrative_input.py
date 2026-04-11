@@ -57,6 +57,18 @@ class NarrativeInfo(BaseModel):
         description="完整叙事日志，仅用于 debug 与回溯，不进入 LLM 上下文"
     )
 
+    def _append_with_rollover(self, entry: "NarrativeEntry", source: str, max_recent: int = 5) -> None:
+        """追加 recent，超出阈值后把最早条目压入 narrative_log。"""
+        self.recent.append(entry)
+        if len(self.recent) > max_recent:
+            oldest = self.recent.pop(0)
+            self.narrative_log.append(NarrativeLogItem(
+                turn=oldest.turn,
+                timestamp=int(datetime.now().timestamp()),
+                content=oldest.content,
+                source=source,
+            ))
+
     def add_narrative(self, turn: int, content: str, source: str = "narrative_agent") -> None:
         """
         添加叙事记录
@@ -66,18 +78,10 @@ class NarrativeInfo(BaseModel):
             content: 叙事内容
             source: 来源
         """
-        # 添加到 recent
-        self.recent.append(NarrativeEntry(turn=turn, content=content))
-
-        # 如果 recent 超过5条，将最早的条目移到 log 中
-        if len(self.recent) > 5:
-            oldest = self.recent.pop(0)
-            self.narrative_log.append(NarrativeLogItem(
-                turn=oldest.turn,
-                timestamp=int(datetime.now().timestamp()),
-                content=oldest.content,
-                source=source
-            ))
+        self._append_with_rollover(
+            entry=NarrativeEntry(turn=turn, content=content),
+            source=source,
+        )
 
     def get_recent_narratives(self, count: int = 5) -> List["NarrativeEntry"]:
         """
@@ -89,7 +93,7 @@ class NarrativeInfo(BaseModel):
         Returns:
             最近 n 条叙事记录
         """
-        return self.recent[-count:] if len(self.recent) <= count else self.recent[-count:]
+        return self.recent[-count:]
 
 
 # ============================================================

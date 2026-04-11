@@ -29,9 +29,9 @@ def build_dm_output_example() -> DmAgentOutput:
                 intent="inspect_room",
                 routing_hint=None,
                 attributes=None,
-                charlist=None,
-                hard=None,
-                is_dialogue=None,
+                against_char_id=None,
+                difficulty=None,
+                dm_reply=None,
             )
         ),
         system_output=DmAgentSystemOutput(
