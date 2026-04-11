@@ -46,8 +46,7 @@ class SystemExecutionMeta(BaseModel):
     """仅系统侧使用的执行元信息。"""
 
     turn: int = Field(default=0, description="回合号")
-    trace_id: str = Field(default="", description="链路追踪 ID")
-    run_id: str = Field(default="", description="执行 ID")
+    trace_id: int = Field(default="", description="链路追踪中的第几个输入下的信息,玩家输入产生的输出是1依次类推 ") 
     debug: Dict[str, str] = Field(default_factory=dict, description="调试信息")
 
 
@@ -76,7 +75,7 @@ class E4LlmView(BaseModel):
     """e4 的 LLM 精简视图。"""
 
     summary: str = Field(default="", description="步骤摘要")
-    extra_npc_context: Dict[str, str] = Field(default_factory=dict, description="scheduler 给 performer 的额外上下文")
+    extra_npc_context: Dict[str, Optional[str]] = Field(default_factory=dict, description="scheduler 给 performer 的额外上下文,其中key为npc的id,对于将要激活不过不需要提供额外上下文的只提供id不提供上下文,也即value为null")
 
 
 class E7LlmView(BaseModel):

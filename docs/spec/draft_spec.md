@@ -1,5 +1,70 @@
 蓝色虚线是并发部分，完整介绍
 # LLM驱动的文字冒险游戏
+## 2. 核心设计原则
+
+1. **`location` 是位置真值**：人物与物品的位置只以 `location` 为准；地图上的 `char_index` / `item_index` 为系统派生索引，不允许 Agent 直接写入。
+2. **链路对象必须结构化**：Agent 之间传递结构化对象，不直接把自由文本当作系统真值。
+3. **每回合必须事务化**：每次输入都包裹为一个回合事务，携带 `turn_id`、`world_version`、`event_id` 等元数据。
+4. **叙事先草稿、后提交**：`narrative_agent` 可以并发生成 `NarrativeDraft`，但只有当状态提交成功后，草稿才可进入叙事真值池。
+5. **真值池分层维护**：世界状态、叙事状态、链路日志分别维护，不允许混写。
+6. **扩展字段必须受约束**：所有 `extensions` 字段都必须挂载在命名空间下，并由 schema registry 约束读写权限。
+
+## 1. 回合事务与并发控制
+
+### 1.1 回合事务字段
+
+每次输入都使用代码系统为其增加事务字段如下：
+
+```ts
+TurnEnvelope {
+  raw_input:str 
+  turn: int 回合数
+  trace_id 链路追踪id
+  debug debug信息
+}
+```
+
+### 1.2 并发范围
+
+V1 只允许以下一个并发区：
+
+1. `ShortSummary` 完成后，并发生成：
+   - `NpcPlan` npc_schduler的输出
+   - `StatePatch` state_change_agent的输出
+   - `NarrativeDraft`narrative_agent的输出
+
+除此之外：
+
+- 世界真值写入必须串行。
+- 一个时刻仅允许一个 `StatePatch` 进入提交临界区。
+- `npc_agent` 必须等待当前回合的状态提交完成后再继续动作。
+
+### 1.3 锁与快照策略
+
+1. 读取世界状态时使用只读快照，不阻塞其他读取。
+2. 提交 `StatePatch` 时使用单个 `asyncio.Lock` 保护提交临界区。
+3. 所有并发分支都必须带上自己的 `turn_id` ，禁止消费无版本信息的对象。
+
+### 1.4 幂等与版本规则
+
+，`StatePatch` 必须带以下字段：
+
+```ts
+PatchMeta {
+  trace_id: int;
+  turn_id: int;
+  retry_seq: number;
+}
+```
+
+规则：
+
+1. 同一个 `patch_id` 只能提交一次。
+2. 若 `expected_version` 与当前世界版本不一致，则拒绝提交，返回 `VERSION_CONFLICT`。
+3. 重试时允许复用 `turn_id`，但必须更新 `patch_id` 或显式标记为同一 patch 的重放。
+4. 持久化层必须记录 patch 提交结果，用于去重与回放。
+
+---
 
 ## 实体 ID 系统规范
     解决原设计中 ID 命名不严谨、实体冲突、管理困难的问题，统一全引擎实体唯一标识标准
@@ -18,13 +83,54 @@ plaintext
     实体 ID 创建后永久不可修改，实体删除后 ID 归档，禁止复用
     所有引擎模块必须通过 ID 索引实体，禁止通过名称 / 描述索引
 
-## 条件系统(DSL):
-    1. 目前仅用于结局判定
-    2. DSL语法定义（简化版）
-       - 条件表达式：`[实体ID].[属性] [操作符] [值]`
-       - 支持操作符：`==`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `not in`
-       - 复合条件：`and`, `or`, `not` 连接
-       - 示例：`char-player-0000.health > 0 and item-key-0000.location in [char-player-0000, map-room-0001]`
+---
+
+## 5. 条件 DSL 规范
+
+### 5.1 用途
+
+条件 DSL 当前用于：
+
+1. 结局判定
+2. 地图连接或交互条件判定
+3. `ASSERT` 前置断言
+
+### 5.2 语法
+
+```text
+[实体ID].[字段路径] [操作符] [值]
+```
+
+### 5.3 支持操作符
+
+| 操作符 | 说明 |
+|--------|------|
+| `==` | 等于 |
+| `!=` | 不等于 |
+| `>` | 大于 |
+| `<` | 小于 |
+| `>=` | 大于等于 |
+| `<=` | 小于等于 |
+| `in` | 在列表中 |
+| `not in` | 不在列表中 |
+
+### 5.4 复合条件
+
+支持使用 `and`、`or`、`not` 组合多个条件。
+
+### 5.5 示例
+
+```text
+char-player-0000.attributes.health.value > 0 and item-room_key-0008.location in [char-player-0000, map-cellar-0001]
+```
+
+### 5.6 执行约束
+
+1. 条件求值必须基于同一版本的世界快照。
+2. `ASSERT` 与结局判定共享同一解析器。
+3. 不允许在条件 DSL 中执行写操作。
+4. 不允许引用未注册字段路径。
+
 
 ## 系统运行流程:
 ![alt text](image.png)
@@ -289,4 +395,107 @@ Attribute {
              -  dilogueLog
           -  npc
               -  Memory
-    
+
+## 2. 状态写入 DSL 规范
+
+### 2.1 可写字段边界
+
+`state_change_agent` 只允许生成作用于 `WorldState` 的补丁，不直接写叙事池和派生索引。
+
+| 字段类别 | 是否允许直接写入 | 说明 |
+|----------|------------------|------|
+| `location` | 是 | 位置唯一真值 |
+| `attributes.*` / `status.*` | 是 | 数值或枚举状态 |
+| `description.add` | 是 | 描述增量缓冲 |
+| `connections[*].is_locked` | 是 | 地图连接锁状态 |
+| schema registry 中声明为 `mutable` 的 `extensions.*` | 是 | 扩展字段 |
+| `description.public` | 否 | 由系统合并流程维护 |
+| `char_index` / `item_index` | 否 | 由 `location` 自动派生 |
+| `memory.log` / `narrative_state.*` | 否 | 分属其他系统 |
+
+### 2.2 基础操作符
+
+V1 支持以下操作符：
+
+| 操作符 | 用途 | 适用类型 |
+|--------|------|----------|
+| `ADD` | 向列表字段追加元素 | list |
+| `REMOVE` | 从列表字段移除元素 | list |
+| `SET` | 直接设置字段值 | string / bool / enum / object |
+| `UPDATE` | 更新数值字段 | number |
+| `MOVE` | 变更 `location` | 唯一真值字段 |
+| `ASSERT` | 提交前断言 | 条件表达式 |
+
+### 2.3 语法
+
+```text
+ASSERT [条件表达式]
+ADD [实体ID].[字段路径] = [值1, 值2, ...]
+REMOVE [实体ID].[字段路径] = [值1, 值2, ...]
+SET [实体ID].[字段路径] = [新值]
+UPDATE [实体ID].[字段路径] = [新值]
+MOVE [实体ID].location = [目标实体ID]
+```
+
+### 2.4 示例
+
+```text
+ASSERT map-cellar-0001.connections[0].is_locked == false
+UPDATE char-player-0000.attributes.health.value = 80
+MOVE item-room_key-0008.location = char-player-0000
+ADD map-cellar-0001.description.add = [{turn: 12, content: "地板上多了被拖拽的痕迹"}]
+REMOVE char-bandit-0002.extensions.combat.tags = ["hidden"]
+SET map-cellar-0001.connections[0].is_locked = true
+```
+
+### 2.5 执行顺序
+
+单个 `StatePatch` 的执行顺序固定为：
+
+1. 解析补丁
+2. 执行全部 `ASSERT`
+3. 执行 `MOVE`
+4. 执行 `SET` / `UPDATE`
+5. 执行 `ADD` / `REMOVE`
+6. 重新计算派生索引
+7. 持久化提交
+
+### 2.6 校验流程
+
+持久化层收到 `StatePatch` 后，按顺序校验：
+
+
+1. 实体 ID 是否存在
+2. 字段路径是否存在且可写
+3. 字段类型与操作符以及写入值是否匹配
+4. 数值是否越界
+5. move的值如`location` 的目标是否有效
+
+若任一检查失败，返回错误并拒绝提交。
+
+### 2.7 错误类型定义
+
+| 错误类型 | 说明 |
+|---------|------|
+| `ENTITY_NOT_FOUND` | 实体不存在 |
+| `FIELD_NOT_FOUND` | 字段不存在 |
+| `FIELD_NOT_MUTABLE` | 字段不可写 |
+| `FIELD_TYPE_MISMATCH` | 字段类型不匹配 |
+| `VALUE_OUT_OF_RANGE` | 数值超界 |
+| `DUPLICATE_ENTRY` | 列表追加重复元素 |
+| `ENTRY_NOT_FOUND` | 列表删除目标不存在 |
+| `INVALID_TARGET` | `MOVE` 目标无效 |
+
+
+### 2.8 重试、降级与回滚
+
+1. 单次提交失败时，允许自动重试。
+2. 单次重试超时后，标记本次尝试失败。
+3. 超过最大重试次数、发生超时或出现不可恢复错误时，进入回滚流程。
+4. 回滚必须恢复到本回合开始前的快照版本。
+5. 回滚完成后：
+   - 此次丢弃 `Narrative_agent`生成结果
+   - 不写入正式叙事池
+   - 输出系统降级提示
+   - 终止当前交互，等待玩家重新输入
+6. 错误日志需记录：`turn_id`、`patch_id`、错误类型、错误消息、重试次数、时间戳。

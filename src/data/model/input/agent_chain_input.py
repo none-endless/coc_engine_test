@@ -39,9 +39,7 @@ class E1InputInfo(BaseModel):
 	"""
 
 	turn: int = Field(description="回合号")
-	source: InputSource = Field(description="输入来源")
 	source_id: str = Field(default="", description="来源实体 ID（如 char-player-0000）")
-	input_type: InputType = Field(description="输入类型")
 	raw_text: str = Field(default="", description="原始输入文本")
 	command: Optional[str] = Field(default=None, description="元命令名称（若 input_type=meta_command）")
 	command_args: Dict[str, Any] = Field(default_factory=dict, description="元命令参数")
@@ -55,10 +53,11 @@ class E2IntentInfo(BaseModel):
 	"""
 
 	intent: str = Field(default="", description="主意图")
-	routing_hint: Optional[str] = Field(default=None, description="链路路由建议:是否需要鉴定,哪种鉴定类型,对抗还是数值,不需要鉴定就为null,需要就为num或者aginst")
+	routing_hint: Optional[Enum] = Field(default=None, description="链路路由建议:是否需要鉴定,哪种鉴定类型,对抗还是数值,不需要鉴定就为null,需要就为num或者aginst")
 	atirrbutes: str = Field(default=None,description="需要进行鉴定的属性名称")
 	charlist : str = Field(default="",description="如果要对抗鉴定对象的id")
-	hard: str = Field(default="",description="鉴定难度:普通,困难.简单")
+	hard: Enum = Field(default="",description="鉴定难度:普通,困难.简单")
+	is_diloggue : Optional[str] = Field(default="",description="玩家是否是在向dm进行对话,或者玩家行为是否应该被拦截,如果是则这里填dm的回复,同时鉴定相关字段应该为null,否则这里为null")
 
 
 
@@ -79,10 +78,8 @@ class E4StepResult(BaseModel):
 	由 evolution_agent / npc_scheduler 产生的推演结算。
 	"""
 
-	producer: str = Field(description="产生该 e4 的 agent 名称")
 	summary: str = Field(default="", description="本步骤摘要")
 	extra_npc_context: Dict[str, Any] = Field(default_factory=dict, description="scheduler 给 performer 的额外信息")
-	metadata: Dict[str, Any] = Field(default_factory=dict, description="扩展信息")
 
 
 
@@ -91,6 +88,7 @@ class E7CausalityChain(BaseModel):
 	e7: 回合因果链
 	记录narrative_agent产生的叙事输出以及其时序关系。
 	"""
+	narrative_list = List[Dict[str,str]] = Field(default="",description="narrative_agent的输出列表,其中列表中的key为产生叙事的轮次从1-n递增,也即trace_id")
 	
 
 

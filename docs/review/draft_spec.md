@@ -65,15 +65,11 @@
 
 ### 4.1 回合包裹对象
 
-每次输入都先被封装为 `TurnEnvelope`：
+每次输入都使用代码系统为其增加 `TurnEnvelope`字段如下：
 
 ```ts
 TurnEnvelope {
   turn_id: string;
-  source: "player" | "npc";
-  actor_id: string;
-  input_text: string;
-  input_type: "meta_command" | "natural_language";
   timestamp: number;
   world_version: number;
 }
