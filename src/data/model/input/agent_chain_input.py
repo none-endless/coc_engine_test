@@ -96,7 +96,7 @@ class E7CausalityChain(BaseModel):
 	e7: 回合因果链
 	记录narrative_agent产生的叙事输出以及其时序关系。
 	"""
-	narrative_list: List[Dict[str, str]] = Field(default_factory=list, description="narrative_agent的输出列表,其中列表中的key为产生叙事的轮次从1-n递增,也即trace_id")
+	narrative_list: List[Dict[str, str]] = Field(default_factory=list, description="narrative_agent 的输出列表，key 使用统一 trace_id（链路追踪编号）")
 	
 
 

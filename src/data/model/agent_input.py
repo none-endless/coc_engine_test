@@ -46,7 +46,7 @@ class AgentIdentity(BaseModel):
 class SystemExecutionMeta(BaseModel):
     """仅系统侧使用的执行元信息。"""
 
-    turn: int = Field(default=0, description="回合号")
+    turn_id: int = Field(default=0, description="回合号")
     trace_id: int = Field(default=0, description="链路追踪中的第几个输入下的信息,玩家输入产生的输出是1依次类推")
     debug: Dict[str, str] = Field(default_factory=dict, description="调试信息")
 

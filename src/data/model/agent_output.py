@@ -61,6 +61,7 @@ class EvolutionAgentLlmOutput(AgentLlmOutputBase):
 
 class EvolutionAgentOutput(AgentOutputEnvelope):
 	llm_output: EvolutionAgentLlmOutput = Field(description="LLM 输出")
+	system_output: Optional[NoSystemOutput] = Field(default=None, description="系统输出（无）")
 	
 
 
@@ -74,7 +75,7 @@ class NarrativeAgentSystemOutput(AgentSystemOutputBase):
 	"""narrative_agent 的系统输出。"""
 
 	turn_id: int = Field(default=0, description="回合编号")
-	trace_id: int = Field(default=0, description="同回合内叙事片段编号")
+	trace_id: int = Field(default=0, description="链路追踪编号")
 
 
 class NarrativeAgentOutput(AgentOutputEnvelope):
@@ -139,10 +140,16 @@ class StateAgentOutput(AgentOutputEnvelope):
 	system_output: StateAgentSystemOutput = Field(description="系统输出")
 
 
+class NpcSchedulerStepResultOutput(BaseModel):
+	"""npc_scheduler 步骤结果输出。"""
+
+	extra_npc_context: Dict[str, Optional[str]] = Field(default_factory=dict, description="scheduler 给 performer 的额外上下文,key表示需要激活的npcid,value是从summary中总结提供给npc的额外信息,如果没有可以填null")
+
+
 class NpcSchedulerAgentLlmOutput(AgentLlmOutputBase):
 	"""npc_scheduler_agent 的 LLM 输出。"""
 
-	step_result: E4SchedulerLlmView = Field(default_factory=E4SchedulerLlmView, description="调度步骤结果")
+	step_result: NpcSchedulerStepResultOutput = Field(default_factory=NpcSchedulerStepResultOutput, description="调度步骤结果")
 
 
 class NpcSchedulerAgentSystemOutput(AgentSystemOutputBase):

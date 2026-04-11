@@ -45,7 +45,7 @@ V1 只允许以下一个并发区：
 2. 提交 `StatePatch` 时使用单个 `asyncio.Lock` 保护提交临界区。
 3. 所有并发分支都必须带上自己的 `turn_id` ，禁止消费无版本信息的对象。
 
-### 1.4 幂等与版本规则
+
 
 ，`StatePatch` 必须带以下字段：
 
@@ -56,13 +56,6 @@ PatchMeta {
   retry_seq: number;
 }
 ```
-
-规则：
-
-1. 同一个 `patch_id` 只能提交一次。
-2. 若 `expected_version` 与当前世界版本不一致，则拒绝提交，返回 `VERSION_CONFLICT`。
-3. 重试时允许复用 `turn_id`，但必须更新 `patch_id` 或显式标记为同一 patch 的重放。
-4. 持久化层必须记录 patch 提交结果，用于去重与回放。
 
 ---
 
