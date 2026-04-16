@@ -54,8 +54,8 @@ class E2IntentInfo(BaseModel):
 
 	intent: str = Field(default="", description="主意图")
 	routing_hint: Optional[str] = Field(default=None, description="链路路由建议:是否需要鉴定,哪种鉴定类型,对抗还是数值,不需要鉴定就为null,需要就为num或者aginst")
-	attributes: Optional[str] = Field(default=None, description="需要进行鉴定的属性名称")
-	against_char_id: Optional[str] = Field(default=None, description="对抗鉴定对象的角色 id")
+	attributes: List[Optional[str]] = Field(default=None, description="需要进行鉴定的属性名称")
+	against_char_id: List[Optional[str]] = Field(default=None, description="对抗鉴定对象的角色 id,第一个默认被鉴定者,如果对抗鉴定发起鉴定方第一个,被挑战的人第二个")
 	difficulty: Optional[str] = Field(default=None, description="鉴定难度:普通,困难,简单")
 	dm_reply: Optional[str] = Field(default=None, description="若该输入应由 DM 直接回复，则填回复文本；否则为 null")
 
@@ -67,7 +67,7 @@ class E3RuleResult(BaseModel):
 	e3: 规则结算事实
 	由 rule_system 产出的客观判断。
 	"""
-
+	intent: str = Field(default="",description="直接来自dm_agent解析出的意图")
 	success: Enum = Field(default="", description="成功,失败,还是大成功,大失败")
 
 

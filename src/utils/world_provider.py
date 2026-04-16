@@ -4,7 +4,7 @@
 """
 
 from typing import List, Dict, Optional, Any, TYPE_CHECKING
-from .model.input.agent_map_intput import (
+from ..data.model.input.agent_map_intput import (
     DescriptionViewForAgent,
     DescriptionViewForNpc,
     DMWorldView,
@@ -24,7 +24,7 @@ from .model.input.agent_map_intput import (
 
 # 避免循环导入，仅在类型检查时导入
 if TYPE_CHECKING:
-    from .model.base import (
+    from ..data.model.base import (
         MapEntity,
         ItemEntity,
         CharacterEntity,
