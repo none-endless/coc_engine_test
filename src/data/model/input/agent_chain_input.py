@@ -32,6 +32,17 @@ class InputSource(str, Enum):
 	SYSTEM = "system"
 
 
+class TurnEnvelope(BaseModel):
+	"""回合事务封装。"""
+
+	raw_input: str = Field(default="", description="原始输入文本")
+	turn: int = Field(default=0, description="回合号")
+	trace_id: int = Field(default=0, description="链路追踪 ID")
+	debug: Dict[str, Any] = Field(default_factory=dict, description="调试信息")
+	world_version: Optional[int] = Field(default=None, description="世界版本号")
+	event_id: Optional[str] = Field(default=None, description="事件 ID")
+
+
 class E1InputInfo(BaseModel):
 	"""
 	e1: 输入信息
@@ -39,6 +50,9 @@ class E1InputInfo(BaseModel):
 	"""
 
 	turn_id: int = Field(description="回合号")
+	trace_id: int = Field(default=0, description="链路追踪 ID")
+	world_version: Optional[int] = Field(default=None, description="世界版本号")
+	event_id: Optional[str] = Field(default=None, description="事件 ID")
 	source_id: str = Field(default="", description="来源实体 ID（如 char-player-0000）")
 	raw_text: str = Field(default="", description="原始输入文本")
 	command: Optional[str] = Field(default=None, description="元命令名称（若 input_type=meta_command）")

@@ -64,6 +64,7 @@ class EvolutionAgentLlmOutput(AgentLlmOutputBase):
 	"""evolution_agent 的 LLM 输出。"""
 
 	summary: str = Field(default="", description="步骤摘要")
+	visible_to_player: bool = Field(default=True, description="该变化是否对玩家可见，不可见则不经过 narrative_agent")
 
 
 class EvolutionAgentOutput(AgentOutputEnvelope):
@@ -72,10 +73,30 @@ class EvolutionAgentOutput(AgentOutputEnvelope):
 	
 
 
+class NarrativeDraftStatus(str, Enum):
+	"""叙事草稿状态。"""
+
+	DRAFT = "draft"
+	COMMITTED = "committed"
+	DISCARDED = "discarded"
+
+
+class NarrativeDraft(BaseModel):
+	"""叙事草稿，状态提交成功前仅允许保持 draft。"""
+
+	draft_id: str = Field(default="", description="草稿 ID")
+	trace_id: int = Field(default=0, description="链路追踪 ID")
+	turn_id: int = Field(default=0, description="回合号")
+	content: str = Field(default="", description="草稿内容")
+	visible_to_player: bool = Field(default=True, description="是否可见给玩家")
+	status: NarrativeDraftStatus = Field(default=NarrativeDraftStatus.DRAFT, description="草稿状态")
+
+
 class NarrativeAgentLlmOutput(AgentLlmOutputBase):
 	"""narrative_agent 的 LLM 输出。"""
 
 	narrative_str: str = Field(default="", description="叙事文本")
+	narrative_draft: Optional[NarrativeDraft] = Field(default=None, description="结构化叙事草稿")
 
 
 class NarrativeAgentSystemOutput(TurnTraceSystemOutputBase):
@@ -171,6 +192,7 @@ class NpcSchedulerAgentOutput(AgentOutputEnvelope):
 class NpcPerformerAgentLlmOutput(AgentLlmOutputBase):
 	"""npc_performer_agent 的 LLM 输出。"""
 
+	intent: str = Field(default="", description="NPC 互动类型：interaction(交互)/dialogue(对话)/description(描述)")
 	action_text: str = Field(default="", description="npc 输出行为文本")
 	change_basic_goal: Optional[str] = Field(default=None, description="新的基础目标，无则为 null")
 	change_active_goal: Optional[str] = Field(default=None, description="新的当前活跃目标，无则为 null")

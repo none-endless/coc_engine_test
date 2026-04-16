@@ -665,7 +665,7 @@ llm
 配套系统
   - 检验npc_id是否存在,不存在则反馈
   - 如果存在需要知道额外的信息就向npc的current_event压入信息
-  - 返回一个调用npc_id列表
+  - 返回一个调用npc_id列表和对应的extra_context
 
 ### narrative_agent
 llm :根据summary和世界叙事信息提供叙事片段
@@ -678,13 +678,16 @@ llm :根据summary和世界叙事信息提供叙事片段
 ### npc_performer_agent
 **注意**:(输出不经过inputSystem和dm_agnt直接提交给ruleSyetem或evolutionSystem)
 - llm
-  - 确定npc的互动类型
+  - 确定npc的互动类型(intent)
     - 交互
       - 检查是否需要鉴定
         - 输出和dm一样的用来提供给ruleSystem鉴定的信息,并将此提供给ruleSystem
       - 不需要鉴定则提交给evolution
     - 对话
       - 返回回复可以包含神态动作描写
+      - 提交给evolution_agent
+    - 描述
+      - npc的非交互且非对话的描述性举动
       - 提交给evolution_agent
   - 确定当前目标:
     - 更改目标系统

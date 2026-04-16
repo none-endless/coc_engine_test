@@ -1,8 +1,76 @@
 import builtins
+import re
 from datetime import datetime
-from typing import List, Dict, Optional, Any, Union, Literal
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import List, Dict, Optional, Any, Union, Literal, ClassVar, Set
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from enum import Enum
+
+
+ENTITY_ID_PATTERN = re.compile(r"^(map|char|item)-[a-z][a-z0-9_]*-\d{4}$")
+EXTENSION_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_\.]*$")
+
+
+class EntityIdMixin(BaseModel):
+    """为实体提供统一 ID 校验和不可变约束。"""
+
+    model_config = ConfigDict(validate_assignment=True)
+    ENTITY_PREFIX: ClassVar[str] = ""
+
+    @field_validator("id")
+    @classmethod
+    def _validate_entity_id(cls, value: str) -> str:
+        if not value:
+            raise ValueError("实体 id 不能为空")
+        if not ENTITY_ID_PATTERN.fullmatch(value):
+            raise ValueError("实体 id 必须满足 [map|char|item]-[name]-[0000] 格式")
+        if cls.ENTITY_PREFIX and not value.startswith(f"{cls.ENTITY_PREFIX}-"):
+            raise ValueError(f"实体 id 前缀必须为 {cls.ENTITY_PREFIX}-")
+        return value
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "id" and "id" in self.__dict__:
+            current = self.__dict__.get("id", "")
+            if current and value != current:
+                raise ValueError("实体 id 创建后不可修改")
+        super().__setattr__(name, value)
+
+
+class ExtensionSchemaItem(BaseModel):
+    """扩展字段 schema 条目。"""
+
+    key: str = Field(description="扩展字段路径，如 quest.stage")
+    mutable: bool = Field(default=False, description="是否允许 Agent 写入")
+    value_type: str = Field(default="any", description="字段值类型说明")
+
+    @field_validator("key")
+    @classmethod
+    def _validate_key(cls, value: str) -> str:
+        if not EXTENSION_KEY_PATTERN.fullmatch(value):
+            raise ValueError("extensions 字段必须是命名空间路径，如 quest.stage")
+        return value
+
+
+class ExtensionSchemaRegistry(BaseModel):
+    """扩展字段 schema 注册表。"""
+
+    fields: Dict[str, ExtensionSchemaItem] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_registry(self) -> "ExtensionSchemaRegistry":
+        for key, spec in self.fields.items():
+            if key != spec.key:
+                raise ValueError(f"registry key 与 schema key 不一致: {key} != {spec.key}")
+        return self
+
+    def is_registered(self, key: str) -> bool:
+        return key in self.fields
+
+
+def _validate_extensions_namespace(extensions: Dict[str, Any]) -> Dict[str, Any]:
+    for key in extensions.keys():
+        if not EXTENSION_KEY_PATTERN.fullmatch(key):
+            raise ValueError(f"extensions 字段不合法: {key}")
+    return extensions
 
 
 # ============================================================
@@ -144,7 +212,7 @@ class MapConnection(BaseModel):
     condition: Optional[str] = Field(default=None, description="解锁条件")
 
 
-class MapEntity(BaseModel):
+class MapEntity(EntityIdMixin):
     """
     地图实体
 
@@ -153,6 +221,8 @@ class MapEntity(BaseModel):
     - 地图可通过 extensions 扩展谜题、机关、标签等字段。
     - 采用命名空间，如 quest.stage、combat.tags。
     """
+    ENTITY_PREFIX: ClassVar[str] = "map"
+
     id: str = Field(default="", description="地图 ID")
     name: str = Field(default="", description="地图名称")
     description: "Description" = Field(default_factory=Description, description="地图描述")
@@ -163,16 +233,23 @@ class MapEntity(BaseModel):
     item_index: List[str] = Field(default_factory=list, description="物品索引，系统派生")
     extensions: Dict[str, Any] = Field(default_factory=dict, description="扩展字段，采用命名空间如 quest.stage")
 
+    @field_validator("extensions")
+    @classmethod
+    def _validate_extensions(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return _validate_extensions_namespace(value)
+
 
 # ============================================================
 # 物品实体类型定义
 # ============================================================
 
-class ItemEntity(BaseModel):
+class ItemEntity(EntityIdMixin):
     """
     物品实体
     - 采用命名空间扩展字段。
     """
+    ENTITY_PREFIX: ClassVar[str] = "item"
+
     id: str = Field(default="", description="物品 ID")
     name: str = Field(default="", description="物品名称")
     description: "Description" = Field(default_factory=Description, description="物品描述")
@@ -180,18 +257,25 @@ class ItemEntity(BaseModel):
     is_portable: bool = Field(default=True, description="是否可携带")
     extensions: Dict[str, Any] = Field(default_factory=dict, description="扩展字段")
 
+    @field_validator("extensions")
+    @classmethod
+    def _validate_extensions(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return _validate_extensions_namespace(value)
+
 
 # ============================================================
 # 角色实体类型定义
 # ============================================================
 
-class CharacterEntity(BaseModel):
+class CharacterEntity(EntityIdMixin):
     """
     角色实体
 
     约定：attributes 与 status 采用以字段 ID 为 key 的映射结构，便于 DSL 通过 attributes.health.value、status.sanity.value 直接访问。
     - Agent 只能写被标记为 mutable 的扩展字段。
     """
+    ENTITY_PREFIX: ClassVar[str] = "char"
+
     id: str = Field(default="", description="角色 ID")
     name: str = Field(default="", description="角色名称")
     basic_info: str = Field(default="", description="基本信息")
@@ -203,4 +287,57 @@ class CharacterEntity(BaseModel):
     memory: "MemoryForNpc" = Field(default_factory=MemoryForNpc, description="角色记忆")
     goal: "Goal" = Field(default_factory=Goal, description="角色目标")
     extensions: Dict[str, Any] = Field(default_factory=dict, description="扩展字段，采用命名空间，必须在 schema registry 中声明类型、默认值、是否可写")
+
+    @field_validator("extensions")
+    @classmethod
+    def _validate_extensions(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return _validate_extensions_namespace(value)
+
+
+class WorldEntityStore(BaseModel):
+    """世界实体容器，负责全局唯一与归档不可复用校验。"""
+
+    maps: Dict[str, MapEntity] = Field(default_factory=dict)
+    characters: Dict[str, CharacterEntity] = Field(default_factory=dict)
+    items: Dict[str, ItemEntity] = Field(default_factory=dict)
+    archived_entity_ids: Set[str] = Field(default_factory=set, description="已归档且不可复用的实体 ID")
+    extension_registry: Optional[ExtensionSchemaRegistry] = Field(default=None, description="扩展字段 schema 注册表")
+
+    @model_validator(mode="after")
+    def _validate_store(self) -> "WorldEntityStore":
+        all_ids: List[str] = []
+
+        for key, entity in self.maps.items():
+            if key != entity.id:
+                raise ValueError(f"maps 的 key 必须等于实体 id: {key} != {entity.id}")
+            all_ids.append(entity.id)
+            self._validate_extensions_registered(entity.extensions, entity.id)
+
+        for key, entity in self.characters.items():
+            if key != entity.id:
+                raise ValueError(f"characters 的 key 必须等于实体 id: {key} != {entity.id}")
+            all_ids.append(entity.id)
+            self._validate_extensions_registered(entity.extensions, entity.id)
+
+        for key, entity in self.items.items():
+            if key != entity.id:
+                raise ValueError(f"items 的 key 必须等于实体 id: {key} != {entity.id}")
+            all_ids.append(entity.id)
+            self._validate_extensions_registered(entity.extensions, entity.id)
+
+        if len(all_ids) != len(set(all_ids)):
+            raise ValueError("实体 ID 必须全局唯一")
+
+        duplicated_archived = set(all_ids).intersection(self.archived_entity_ids)
+        if duplicated_archived:
+            raise ValueError(f"实体 ID 已归档不可复用: {sorted(duplicated_archived)}")
+
+        return self
+
+    def _validate_extensions_registered(self, extensions: Dict[str, Any], entity_id: str) -> None:
+        if self.extension_registry is None:
+            return
+        for key in extensions.keys():
+            if not self.extension_registry.is_registered(key):
+                raise ValueError(f"实体 {entity_id} 使用了未注册扩展字段: {key}")
 

@@ -192,20 +192,6 @@ class WorldDataProvider:
         # 1. 地图实体
         map_writable_fields = [
             WritableFieldInfo(
-                field_path="name",
-                field_name="地图名称",
-                current_value=map_entity.name,
-                value_type="string",
-                description="地图的名称"
-            ),
-            WritableFieldInfo(
-                field_path="description.public",
-                field_name="公共描述",
-                current_value=map_entity.description.public,
-                value_type="list",
-                description="地图的公共描述信息"
-            ),
-            WritableFieldInfo(
                 field_path="description.add",
                 field_name="暂存描述",
                 current_value=[{"turn": a.turn, "content": a.content} for a in map_entity.description.add],
@@ -222,13 +208,6 @@ class WorldDataProvider:
                     current_value=conn.is_locked,
                     value_type="boolean",
                     description=f"方向 {conn.direction}，描述：{conn.description}"
-                ),
-                WritableFieldInfo(
-                    field_path=f"connections[{i}].condition",
-                    field_name=f"连接「{conn.name}」解锁条件",
-                    current_value=conn.condition,
-                    value_type="string",
-                    description=f"条件满足后可解锁"
                 ),
             ])
 
@@ -250,13 +229,6 @@ class WorldDataProvider:
                     current_value=char.location,
                     value_type="string",
                     description="角色当前所在位置"
-                ),
-                WritableFieldInfo(
-                    field_path="description.public",
-                    field_name="公共描述",
-                    current_value=char.description.public,
-                    value_type="list",
-                    description="角色的公共描述"
                 ),
                 WritableFieldInfo(
                     field_path="description.add",
@@ -302,20 +274,6 @@ class WorldDataProvider:
                     current_value=item.location,
                     value_type="string",
                     description="物品当前所在位置"
-                ),
-                WritableFieldInfo(
-                    field_path="is_portable",
-                    field_name="可携带性",
-                    current_value=item.is_portable,
-                    value_type="boolean",
-                    description="物品是否可被玩家拾取"
-                ),
-                WritableFieldInfo(
-                    field_path="description.public",
-                    field_name="公共描述",
-                    current_value=item.description.public,
-                    value_type="list",
-                    description="物品的公共描述"
                 ),
                 WritableFieldInfo(
                     field_path="description.add",

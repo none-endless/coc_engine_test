@@ -24,6 +24,7 @@ from .input.agent_chain_input import (
     E4SchedulerStepResult,
     E7CausalityChain,
     FallbackError,
+    TurnEnvelope,
 )
 from .input.agent_map_intput import (
     DMWorldView,
@@ -48,7 +49,10 @@ class SystemExecutionMeta(BaseModel):
 
     turn_id: int = Field(default=0, description="回合号")
     trace_id: int = Field(default=0, description="链路追踪中的第几个输入下的信息,玩家输入产生的输出是1依次类推")
+    world_version: Optional[int] = Field(default=None, description="世界版本号")
+    event_id: Optional[str] = Field(default=None, description="事件 ID")
     debug: Dict[str, str] = Field(default_factory=dict, description="调试信息")
+    turn_envelope: Optional[TurnEnvelope] = Field(default=None, description="统一回合事务封装")
 
 
 class SystemRetryControl(BaseModel):
