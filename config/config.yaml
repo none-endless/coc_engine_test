@@ -1,0 +1,7 @@
+runtime:
+  turn_timeout: 30
+  log_level: INFO
+
+storage:
+  memory_log_path: data/memory.log
+  short_log_path: data/shortLog.log

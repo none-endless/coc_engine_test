@@ -1,0 +1,30 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: EngineConfig
+type: object
+additionalProperties: false
+properties:
+  runtime:
+    type: object
+    additionalProperties: false
+    properties:
+      turn_timeout:
+        type: integer
+        minimum: 1
+        default: 30
+      log_level:
+        type: string
+        enum: [DEBUG, INFO, WARNING, ERROR]
+        default: INFO
+    required: [turn_timeout, log_level]
+  storage:
+    type: object
+    additionalProperties: false
+    properties:
+      memory_log_path:
+        type: string
+        default: data/memory.log
+      short_log_path:
+        type: string
+        default: data/shortLog.log
+    required: [memory_log_path, short_log_path]
+required: [runtime, storage]

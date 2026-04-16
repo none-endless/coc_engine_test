@@ -16,7 +16,7 @@ class EntityIdMixin(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
     ENTITY_PREFIX: ClassVar[str] = ""
 
-    @field_validator("id")
+    @field_validator("id", check_fields=False)
     @classmethod
     def _validate_entity_id(cls, value: str) -> str:
         if not value:

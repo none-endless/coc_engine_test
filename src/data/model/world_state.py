@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+import copy
+import threading
+from datetime import datetime
+from typing import Dict, List, Optional
+
+from .base import CharacterEntity, ItemEntity, MapEntity, WorldEntityStore
+
+
+class WorldState:
+    """Singleton world-state container with derived indexes and snapshots."""
+
+    _instance: Optional["WorldState"] = None
+    _instance_lock = threading.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self, initial_store: Optional[WorldEntityStore] = None) -> None:
+        if getattr(self, "_initialized", False):
+            return
+
+        self._write_lock = threading.RLock()
+        self._store = initial_store or WorldEntityStore()
+        self._version = 0
+        self._snapshot_cache = {}
+        self._initialized = True
+
+        with self._write_lock:
+            self._derive_indexes_locked()
+            self._refresh_snapshot_locked()
+
+    def reset(self, store: Optional[WorldEntityStore] = None) -> None:
+        """Reset singleton internals, mainly used by tests/bootstrap."""
+        with self._write_lock:
+            self._store = store or WorldEntityStore()
+            self._version = 0
+            self._derive_indexes_locked()
+            self._refresh_snapshot_locked()
+
+    def register_map(self, map_entity: MapEntity) -> None:
+        with self._write_lock:
+            self._store.maps[map_entity.id] = map_entity
+            self._version += 1
+            self._derive_indexes_locked()
+            self._refresh_snapshot_locked()
+
+    def register_character(self, character: CharacterEntity) -> None:
+        with self._write_lock:
+            self._store.characters[character.id] = character
+            self._version += 1
+            self._derive_indexes_locked()
+            self._refresh_snapshot_locked()
+
+    def register_item(self, item: ItemEntity) -> None:
+        with self._write_lock:
+            self._store.items[item.id] = item
+            self._version += 1
+            self._derive_indexes_locked()
+            self._refresh_snapshot_locked()
+
+    def update_character_location(self, char_id: str, new_map_id: str) -> None:
+        with self._write_lock:
+            if new_map_id not in self._store.maps:
+                raise KeyError(f"unknown map id: {new_map_id}")
+            character = self._store.characters[char_id]
+            character.location = new_map_id
+            self._version += 1
+            self._derive_indexes_locked()
+            self._refresh_snapshot_locked()
+
+    def update_item_location(self, item_id: str, new_location: str) -> None:
+        with self._write_lock:
+            item = self._store.items[item_id]
+            item.location = new_location
+            self._version += 1
+            self._derive_indexes_locked()
+            self._refresh_snapshot_locked()
+
+    def get_map(self, map_id: str) -> MapEntity:
+        return self._store.maps[map_id].model_copy(deep=True)
+
+    def get_character(self, char_id: str) -> CharacterEntity:
+        return self._store.characters[char_id].model_copy(deep=True)
+
+    def get_item(self, item_id: str) -> ItemEntity:
+        return self._store.items[item_id].model_copy(deep=True)
+
+    def get_characters_at(self, map_id: str) -> List[CharacterEntity]:
+        return [
+            char.model_copy(deep=True)
+            for char in self._store.characters.values()
+            if char.location == map_id
+        ]
+
+    def get_items_at(self, map_id: str) -> List[ItemEntity]:
+        return [
+            item.model_copy(deep=True)
+            for item in self._store.items.values()
+            if item.location == map_id
+        ]
+
+    def get_adjacent_map_ids(self, map_id: str) -> List[str]:
+        map_entity = self._store.maps[map_id]
+        result: List[str] = []
+        for conn in map_entity.connections:
+            target = getattr(conn, "target_map_id", None)
+            if target:
+                result.append(target)
+                continue
+            if conn.id in self._store.maps and conn.id != map_id:
+                result.append(conn.id)
+        return result
+
+    def get_snapshot(self) -> Dict[str, object]:
+        """Return an immutable-by-copy snapshot for lock-free readers."""
+        return copy.deepcopy(self._snapshot_cache)
+
+    def _derive_indexes_locked(self) -> None:
+        char_index: Dict[str, List[str]] = {map_id: [] for map_id in self._store.maps.keys()}
+        item_index: Dict[str, List[str]] = {map_id: [] for map_id in self._store.maps.keys()}
+
+        for char in self._store.characters.values():
+            if char.location in char_index:
+                char_index[char.location].append(char.id)
+
+        for item in self._store.items.values():
+            if item.location in item_index:
+                item_index[item.location].append(item.id)
+
+        for map_id, map_entity in self._store.maps.items():
+            map_entity.char_index = sorted(char_index[map_id])
+            map_entity.item_index = sorted(item_index[map_id])
+
+    def _refresh_snapshot_locked(self) -> None:
+        self._snapshot_cache = {
+            "version": self._version,
+            "snapshot_at": datetime.utcnow().isoformat() + "Z",
+            "maps": {
+                map_id: map_entity.model_dump(mode="json")
+                for map_id, map_entity in self._store.maps.items()
+            },
+            "characters": {
+                char_id: char.model_dump(mode="json")
+                for char_id, char in self._store.characters.items()
+            },
+            "items": {
+                item_id: item.model_dump(mode="json")
+                for item_id, item in self._store.items.items()
+            },
+        }
