@@ -88,14 +88,7 @@ EVOLUTION_SYSTEM_PROMPT = """
   "summary": "char-innkeeper-0002 悄悄向 char-player-0000 的酒杯中投入毒药",
   "visible_to_player": false
 }
-```
 
-### 示例 3：环境变化（不可见）
-```json
-{
-  "summary": "远处的森林发生了小型火灾，烟雾开始向城镇方向飘散",
-  "visible_to_player": false
-}
 ```
 
 ## 错误处理

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .base import CharacterEntity, ItemEntity, MapEntity, WorldEntityStore
@@ -178,7 +178,7 @@ class WorldState:
     def _refresh_snapshot_locked(self) -> None:
         self._snapshot_cache = {
             "version": self._version,
-            "snapshot_at": datetime.utcnow().isoformat() + "Z",
+            "snapshot_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "maps": {
                 map_id: map_entity.model_dump(mode="json")
                 for map_id, map_entity in self._store.maps.items()

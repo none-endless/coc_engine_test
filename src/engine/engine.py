@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from src.agent.llm.evolution_agent import EvolutionAgent, EvolutionResult
 from src.agent.llm.input_agent import DMAgent, DmAnalyzeResult
@@ -37,12 +37,12 @@ from src.data.model.agent_input import (
     SystemExecutionMeta,
     SystemRetryControl,
 )
-from src.data.model.agent_output import NarrativeAgentOutput, NpcSchedulerAgentOutput, StateAgentOutput
+from src.data.model.agent_output import CocCheckResult, NarrativeAgentOutput, NpcSchedulerAgentOutput, StateAgentOutput
 from src.data.model.input.agent_chain_input import (
     DmAgentChainInput,
-    E4EvolutionStepResult,
     E1InputInfo,
     E3RuleResult,
+    E4EvolutionStepResult,
     E7CausalityChain,
     EvolutionAgentChainInput,
     FallbackError,
@@ -54,37 +54,59 @@ from src.data.model.input.agent_memory_input import DmMemory
 from src.data.model.input.agent_narrative_input import NarrativeInfo
 from src.data.model.world_state import WorldState
 from src.rule.input_system import InputSystem
-from src.rule.rule_system import CocCheckResult, RuleSystem
+from src.rule.rule_system import RuleSystem
 from src.rule.state_patch import StatePatchError, StatePatchRuntime
+from src.utils.agent_io_logger import make_io_record
 from src.utils.world_provider import WorldDataProvider
 
 
-class Phase2Engine:
-    """Serial natural-language pipeline: DM -> RuleSystem -> Evolution."""
+EngineMode = Literal["phase2", "phase3"]
+
+
+class Engine:
+    """Unified engine entrypoint for phase2 serial mode and phase3 concurrent mode."""
 
     def __init__(
         self,
         world_state: WorldState,
+        mode: EngineMode = "phase3",
         dm_max_retries: int = 2,
         llm_service: Optional[LLMServiceBase] = None,
+        io_logger=None,
         config_path: str = "config/config.yaml",
     ) -> None:
         self.world_state = world_state
+        self.mode = mode
         self.rule_system = RuleSystem(world_state=world_state)
         self.world_provider = WorldDataProvider(world_state=world_state)
 
         if llm_service is None:
             cfg = ConfigLoader.load(config_path=config_path)
-            llm_service = LLMServiceBase(config=cfg)
+            llm_service = LLMServiceBase(config=cfg, io_recorder=io_logger)
+        elif io_logger is not None and hasattr(llm_service, "io_recorder") and getattr(llm_service, "io_recorder", None) is None:
+            setattr(llm_service, "io_recorder", io_logger)
 
         self.dm_agent = DMAgent(llm_service=llm_service, max_retries=dm_max_retries)
         self.evolution_agent = EvolutionAgent(llm_service=llm_service)
         self._current_actor_id = ""
         self._routing_logs: List[Dict[str, Any]] = []
+        self._io_logger = io_logger
         self._narrative_info = NarrativeInfo()
         self._dm_memory = DmMemory()
 
         self.input_system = InputSystem(rule_system=self.rule_system, dm_handler=self._dm_handler)
+
+        cfg = getattr(self.dm_agent.llm_service, "config", None)
+        if cfg is None:
+            cfg = ConfigLoader.load(config_path=config_path)
+        self.config = cfg
+
+        self.state_agent = StateChangeAgent(llm_service=self.dm_agent.llm_service)
+        self.npc_scheduler_agent = NpcSchedulerAgent(llm_service=self.dm_agent.llm_service)
+        self.narrative_agent = NarrativeAgent(llm_service=self.dm_agent.llm_service)
+
+        self.state_patch_runtime = StatePatchRuntime(world_state=self.world_state)
+        self._state_commit_lock = asyncio.Lock()
 
     def _dm_handler(self, envelope) -> Dict[str, Any]:
         chain_e1 = E1InputInfo(
@@ -127,6 +149,13 @@ class Phase2Engine:
             available_attributes=available_attrs,
             valid_character_ids=valid_ids,
         )
+        self._record_io(
+            kind="agent_io",
+            agent_name="dmagent",
+            input_data=dm_input,
+            output_data=analyzed.output,
+            extra={"retries": analyzed.retries, "validation_errors": analyzed.validation_errors},
+        )
         return analyzed.model_dump(mode="json")
 
     def run_turn(
@@ -136,6 +165,72 @@ class Phase2Engine:
         turn_id: int,
         trace_id: int,
         causality_chain: Optional[E7CausalityChain] = None,
+    ) -> Dict[str, Any]:
+        if self.mode == "phase2":
+            return self._run_phase2_turn(
+                raw_input=raw_input,
+                actor_id=actor_id,
+                turn_id=turn_id,
+                trace_id=trace_id,
+                causality_chain=causality_chain,
+            )
+        return asyncio.run(
+            self.run_turn_async(
+                raw_input=raw_input,
+                actor_id=actor_id,
+                turn_id=turn_id,
+                trace_id=trace_id,
+                causality_chain=causality_chain,
+            )
+        )
+
+    async def run_turn_async(
+        self,
+        raw_input: str,
+        actor_id: str,
+        turn_id: int,
+        trace_id: int,
+        causality_chain: Optional[E7CausalityChain] = None,
+    ) -> Dict[str, Any]:
+        if self.mode == "phase2":
+            return self._run_phase2_turn(
+                raw_input=raw_input,
+                actor_id=actor_id,
+                turn_id=turn_id,
+                trace_id=trace_id,
+                causality_chain=causality_chain,
+            )
+        return await self._run_phase3_turn_async(
+            raw_input=raw_input,
+            actor_id=actor_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            causality_chain=causality_chain,
+        )
+
+    def get_routing_logs(self) -> List[Dict[str, Any]]:
+        return list(self._routing_logs)
+
+    def _record_io(self, *, kind: str, agent_name: str, input_data, output_data=None, extra: Optional[Dict[str, Any]] = None) -> None:
+        if self._io_logger is None:
+            return
+
+        record = make_io_record(
+            kind=kind,
+            agent_name=agent_name,
+            input_data=input_data.model_dump(mode="json") if hasattr(input_data, "model_dump") else input_data,
+            output_data=output_data.model_dump(mode="json") if hasattr(output_data, "model_dump") else output_data,
+            extra=extra,
+        )
+        self._io_logger(record)
+
+    def _prepare_turn_context(
+        self,
+        *,
+        raw_input: str,
+        actor_id: str,
+        turn_id: int,
+        trace_id: int,
     ) -> Dict[str, Any]:
         self._current_actor_id = actor_id
         world_version = int(self.world_state.get_snapshot().get("version", 0))
@@ -148,16 +243,38 @@ class Phase2Engine:
             world_version=world_version,
         )
 
-        if routed.route == "rule_system_meta":
-            event = {
-                "route": routed.route,
-                "payload": routed.payload,
-                "turn_id": turn_id,
-                "trace_id": trace_id,
-            }
-            self._routing_logs.append(event)
-            return event
+        return {
+            "routed": routed,
+            "world_version": world_version,
+        }
 
+    def _handle_meta_route(self, *, routed, turn_id: int, trace_id: int) -> Dict[str, Any]:
+        event = {
+            "route": routed.route,
+            "payload": routed.payload,
+            "turn_id": turn_id,
+            "trace_id": trace_id,
+        }
+        self._routing_logs.append(event)
+        self._record_io(
+            kind="turn_result",
+            agent_name="engine",
+            input_data={"route": "rule_system_meta", "turn_id": turn_id, "trace_id": trace_id},
+            output_data=event,
+        )
+        return event
+
+    def _build_nl_context(
+        self,
+        *,
+        routed,
+        raw_input: str,
+        actor_id: str,
+        turn_id: int,
+        trace_id: int,
+        world_version: int,
+        causality_chain: Optional[E7CausalityChain],
+    ) -> Dict[str, Any]:
         dm_result = DmAnalyzeResult.model_validate(routed.payload)
         e1 = E1InputInfo(
             turn_id=turn_id,
@@ -171,10 +288,18 @@ class Phase2Engine:
 
         coc_result: Optional[CocCheckResult] = None
         e3_result = E3RuleResult(intent=dm_result.intent_info.intent, success="")
-
         if dm_result.intent_info.routing_hint in {"num", "against"}:
             coc_result = self._run_check(actor_id, dm_result)
-            e3_result = E3RuleResult(intent=dm_result.intent_info.intent, success=coc_result.result_type)
+            e3_result = E3RuleResult(
+                intent=dm_result.intent_info.intent,
+                check_type=coc_result.check_type,
+                success=coc_result.result_type,
+                difficulty=coc_result.difficulty,
+                actor_id=coc_result.id,
+                opposed_id=coc_result.opposed_id,
+                winner_id=coc_result.winner_id,
+                affected_ids=coc_result.affected_ids,
+            )
 
         actor = self.world_state.get_character(actor_id)
         views = self.world_provider.precompute_all_views(current_map_id=actor.location, turn=turn_id)
@@ -205,161 +330,100 @@ class Phase2Engine:
             agent_input=evo_input,
             causality_chain=causality_chain,
         )
+        self._record_io(
+            kind="agent_io",
+            agent_name="evolution",
+            input_data=evo_input,
+            output_data=evolution_result.output,
+            extra={"summary": evolution_result.summary, "visible_to_player": evolution_result.visible_to_player},
+        )
 
+        return {
+            "dm_result": dm_result,
+            "e1": e1,
+            "e3_result": e3_result,
+            "coc_result": coc_result,
+            "views": views,
+            "e7_input": e7_input,
+            "evolution_result": evolution_result,
+        }
+
+    def _run_phase2_turn(
+        self,
+        *,
+        raw_input: str,
+        actor_id: str,
+        turn_id: int,
+        trace_id: int,
+        causality_chain: Optional[E7CausalityChain],
+    ) -> Dict[str, Any]:
+        prepared = self._prepare_turn_context(
+            raw_input=raw_input,
+            actor_id=actor_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+        )
+        routed = prepared["routed"]
+        if routed.route == "rule_system_meta":
+            return self._handle_meta_route(routed=routed, turn_id=turn_id, trace_id=trace_id)
+
+        context = self._build_nl_context(
+            routed=routed,
+            raw_input=raw_input,
+            actor_id=actor_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            world_version=prepared["world_version"],
+            causality_chain=causality_chain,
+        )
         event = {
             "route": "serial_nl",
             "turn_id": turn_id,
             "trace_id": trace_id,
-            "dm": dm_result.output.model_dump(mode="json"),
-            "e3": e3_result.model_dump(mode="json"),
-            "evolution": evolution_result.model_dump(mode="json"),
-            "narrative_triggered": evolution_result.visible_to_player,
+            "dm": self._serialize_dm_result(context["dm_result"]),
+            "e3": context["e3_result"].model_dump(mode="json"),
+            "evolution": context["evolution_result"].model_dump(mode="json"),
+            "narrative_triggered": context["evolution_result"].visible_to_player,
         }
         self._routing_logs.append(event)
+        self._record_io(
+            kind="turn_result",
+            agent_name="engine",
+            input_data={"route": "phase2", "turn_id": turn_id, "trace_id": trace_id, "actor_id": actor_id},
+            output_data=event,
+        )
         return event
 
-    def get_routing_logs(self) -> List[Dict[str, Any]]:
-        return list(self._routing_logs)
-
-    def _run_check(self, actor_id: str, dm_result: DmAnalyzeResult) -> CocCheckResult:
-        actor = self.world_state.get_character(actor_id)
-        attrs = dm_result.intent_info.attributes or []
-        if not attrs:
-            raise ValueError("check routing without attributes")
-
-        attr_name = attrs[0]
-        attr = actor.attributes.get(attr_name)
-        if attr is None:
-            raise ValueError(f"attribute not found on actor: {attr_name}")
-
-        return self.rule_system.run_coc_check(actor_id=actor_id, attribute_value=attr.value)
-
-    @staticmethod
-    def _stringify_e7(chain: E7CausalityChain) -> str:
-        if not chain.narrative_list:
-            return ""
-        return " | ".join(str(entry) for entry in chain.narrative_list)
-
-
-class Phase3Engine(Phase2Engine):
-    """Concurrent phase-3 pipeline: summary -> scheduler/state/narrative branches."""
-
-    def __init__(
+    async def _run_phase3_turn_async(
         self,
-        world_state: WorldState,
-        dm_max_retries: int = 2,
-        llm_service: Optional[LLMServiceBase] = None,
-        config_path: str = "config/config.yaml",
-    ) -> None:
-        super().__init__(
-            world_state=world_state,
-            dm_max_retries=dm_max_retries,
-            llm_service=llm_service,
-            config_path=config_path,
-        )
-        cfg = getattr(self.dm_agent.llm_service, "config", None)
-        if cfg is None:
-            cfg = ConfigLoader.load(config_path=config_path)
-        self.config = cfg
-
-        shared_llm = self.dm_agent.llm_service
-        self.state_agent = StateChangeAgent(llm_service=shared_llm)
-        self.npc_scheduler_agent = NpcSchedulerAgent(llm_service=shared_llm)
-        self.narrative_agent = NarrativeAgent(llm_service=shared_llm)
-
-        self.state_patch_runtime = StatePatchRuntime(world_state=self.world_state)
-        self._state_commit_lock = asyncio.Lock()
-
-    def run_turn(
-        self,
+        *,
         raw_input: str,
         actor_id: str,
         turn_id: int,
         trace_id: int,
-        causality_chain: Optional[E7CausalityChain] = None,
+        causality_chain: Optional[E7CausalityChain],
     ) -> Dict[str, Any]:
-        return asyncio.run(
-            self.run_turn_async(
-                raw_input=raw_input,
-                actor_id=actor_id,
-                turn_id=turn_id,
-                trace_id=trace_id,
-                causality_chain=causality_chain,
-            )
-        )
-
-    async def run_turn_async(
-        self,
-        raw_input: str,
-        actor_id: str,
-        turn_id: int,
-        trace_id: int,
-        causality_chain: Optional[E7CausalityChain] = None,
-    ) -> Dict[str, Any]:
-        self._current_actor_id = actor_id
-        world_version = int(self.world_state.get_snapshot().get("version", 0))
-
-        routed = self.input_system.dispatch(
+        prepared = self._prepare_turn_context(
             raw_input=raw_input,
             actor_id=actor_id,
-            turn=turn_id,
-            trace_id=trace_id,
-            world_version=world_version,
-        )
-
-        if routed.route == "rule_system_meta":
-            event = {
-                "route": routed.route,
-                "payload": routed.payload,
-                "turn_id": turn_id,
-                "trace_id": trace_id,
-            }
-            self._routing_logs.append(event)
-            return event
-
-        dm_result = DmAnalyzeResult.model_validate(routed.payload)
-        e1 = E1InputInfo(
             turn_id=turn_id,
             trace_id=trace_id,
-            world_version=world_version,
-            event_id=routed.envelope.event_id,
-            source_id=actor_id,
-            raw_text=raw_input,
-            metadata=routed.envelope.debug,
+        )
+        routed = prepared["routed"]
+        if routed.route == "rule_system_meta":
+            return self._handle_meta_route(routed=routed, turn_id=turn_id, trace_id=trace_id)
+
+        context = self._build_nl_context(
+            routed=routed,
+            raw_input=raw_input,
+            actor_id=actor_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            world_version=prepared["world_version"],
+            causality_chain=causality_chain,
         )
 
-        coc_result: Optional[CocCheckResult] = None
-        e3_result = E3RuleResult(intent=dm_result.intent_info.intent, success="")
-        if dm_result.intent_info.routing_hint in {"num", "against"}:
-            coc_result = self._run_check(actor_id, dm_result)
-            e3_result = E3RuleResult(intent=dm_result.intent_info.intent, success=coc_result.result_type)
-
-        actor = self.world_state.get_character(actor_id)
-        views = self.world_provider.precompute_all_views(current_map_id=actor.location, turn=turn_id)
-        e7_input = causality_chain or E7CausalityChain()
-
-        evo_input = EvolutionAgentInput(
-            identity=AgentIdentity(id="evolution", skill="summarize world evolution"),
-            llm_input=EvolutionAgentLlmInput(
-                e1=E1LlmView(raw_text=raw_input, source_id=actor_id),
-                e3=E3LlmView(success=e3_result.success or "none"),
-                e7=E7LlmView(narrative_causality=self._stringify_e7(e7_input)),
-                world_info=views.dm_view,
-                narrative_info=self._narrative_info,
-            ),
-            system_input=EvolutionAgentSystemInput(
-                chain_raw=EvolutionAgentChainInput(e1=e1, e3=e3_result, e7=e7_input),
-                execution=SystemExecutionMeta(
-                    turn_id=turn_id,
-                    trace_id=trace_id,
-                    world_version=world_version,
-                    event_id=routed.envelope.event_id,
-                    debug={k: str(v) for k, v in routed.envelope.debug.items()},
-                ),
-            ),
-        )
-
-        evolution_result = self.evolution_agent.evolve(agent_input=evo_input, causality_chain=causality_chain)
+        evolution_result = context["evolution_result"]
         e4 = E4EvolutionLlmView(summary=evolution_result.summary)
         e4_chain = E4EvolutionStepResult(summary=evolution_result.summary)
         checkpoint = self.world_state.capture_checkpoint()
@@ -368,7 +432,7 @@ class Phase3Engine(Phase2Engine):
             identity=AgentIdentity(id="npcscheduler", skill="schedule npc branch"),
             llm_input=NpcSchedulerAgentLlmInput(
                 e4=e4,
-                world_info=views.npc_scheduler_view,
+                world_info=context["views"].npc_scheduler_view,
                 narrative_info=self._narrative_info,
             ),
             system_input=NpcSchedulerAgentSystemInput(
@@ -376,7 +440,7 @@ class Phase3Engine(Phase2Engine):
                 execution=SystemExecutionMeta(
                     turn_id=turn_id,
                     trace_id=trace_id,
-                    world_version=world_version,
+                    world_version=prepared["world_version"],
                     event_id=routed.envelope.event_id,
                     debug={"branch": "npc_scheduler"},
                 ),
@@ -387,7 +451,7 @@ class Phase3Engine(Phase2Engine):
             identity=AgentIdentity(id="state", skill="generate state patch"),
             llm_input=StateAgentLlmInput(
                 e4=e4,
-                world_info=views.state_agent_view,
+                world_info=context["views"].state_agent_view,
                 fallback_error=None,
             ),
             system_input=StateAgentSystemInput(
@@ -410,7 +474,7 @@ class Phase3Engine(Phase2Engine):
             identity=AgentIdentity(id="narrative", skill="generate narrative draft"),
             llm_input=NarrativeAgentLlmInput(
                 e4=e4,
-                world_info=views.narrative_view,
+                world_info=context["views"].narrative_view,
                 narrative_info=self._narrative_info,
             ),
             system_input=NarrativeAgentSystemInput(
@@ -418,7 +482,7 @@ class Phase3Engine(Phase2Engine):
                 execution=SystemExecutionMeta(
                     turn_id=turn_id,
                     trace_id=trace_id,
-                    world_version=world_version,
+                    world_version=prepared["world_version"],
                     event_id=routed.envelope.event_id,
                     debug={"branch": "narrative"},
                 ),
@@ -448,8 +512,8 @@ class Phase3Engine(Phase2Engine):
             "route": "phase3_concurrent_nl",
             "turn_id": turn_id,
             "trace_id": trace_id,
-            "dm": dm_result.output.model_dump(mode="json"),
-            "e3": e3_result.model_dump(mode="json"),
+            "dm": self._serialize_dm_result(context["dm_result"]),
+            "e3": context["e3_result"].model_dump(mode="json"),
             "evolution": evolution_result.model_dump(mode="json"),
             "npcscheduler": scheduler_out.model_dump(mode="json"),
             "state": state_out,
@@ -460,7 +524,64 @@ class Phase3Engine(Phase2Engine):
             "terminated": fallback_error is not None,
         }
         self._routing_logs.append(event)
+        self._record_io(
+            kind="turn_result",
+            agent_name="engine",
+            input_data={"route": "phase3", "turn_id": turn_id, "trace_id": trace_id, "actor_id": actor_id},
+            output_data=event,
+        )
         return event
+
+    def _run_check(self, actor_id: str, dm_result: DmAnalyzeResult) -> CocCheckResult:
+        actor = self.world_state.get_character(actor_id)
+        attrs = dm_result.intent_info.attributes or []
+        if not attrs:
+            raise ValueError("check routing without attributes")
+
+        attr_name = attrs[0]
+        attr = actor.attributes.get(attr_name)
+        if attr is None:
+            raise ValueError(f"attribute not found on actor: {attr_name}")
+
+        if dm_result.intent_info.routing_hint == "against":
+            participant_ids = dm_result.intent_info.against_char_id or []
+            if len(participant_ids) < 2:
+                raise ValueError("against routing without enough participant ids")
+
+            target_id = participant_ids[1]
+            target = self.world_state.get_character(target_id)
+            target_attr = target.attributes.get(attr_name)
+            if target_attr is None:
+                raise ValueError(f"attribute not found on target: {attr_name}")
+
+            return self.rule_system.run_against_check(
+                actor_id=actor_id,
+                actor_attribute_name=attr_name,
+                actor_attribute_value=attr.value,
+                target_id=target_id,
+                target_attribute_name=attr_name,
+                target_attribute_value=target_attr.value,
+                difficulty=dm_result.intent_info.difficulty,
+            )
+
+        return self.rule_system.run_numeric_check(
+            actor_id=actor_id,
+            attribute_name=attr_name,
+            attribute_value=attr.value,
+            difficulty=dm_result.intent_info.difficulty,
+        )
+
+    @staticmethod
+    def _serialize_dm_result(dm_result: DmAnalyzeResult) -> Dict[str, Any]:
+        payload = dm_result.output.model_dump(mode="json")
+        payload["intent_info"] = payload.get("llm_output", {}).get("intent_info", {})
+        return payload
+
+    @staticmethod
+    def _stringify_e7(chain: E7CausalityChain) -> str:
+        if not chain.narrative_list:
+            return ""
+        return " | ".join(str(entry) for entry in chain.narrative_list)
 
     async def _run_scheduler_branch(
         self,
@@ -471,6 +592,18 @@ class Phase3Engine(Phase2Engine):
         started_at = datetime.now(timezone.utc).isoformat()
         output = await asyncio.to_thread(self.npc_scheduler_agent.run, agent_input=agent_input)
         ended = time.perf_counter()
+        self._record_io(
+            kind="agent_io",
+            agent_name="npc_scheduler",
+            input_data=agent_input,
+            output_data=output,
+            extra={
+                "branch": "npc_scheduler",
+                "turn_id": agent_input.system_input.execution.turn_id,
+                "trace_id": agent_input.system_input.execution.trace_id,
+                "duration_ms": round((ended - started) * 1000, 3),
+            },
+        )
         branch_logs.append(
             {
                 "branch": "npc_scheduler",
@@ -491,6 +624,18 @@ class Phase3Engine(Phase2Engine):
         started_at = datetime.now(timezone.utc).isoformat()
         output = await asyncio.to_thread(self.narrative_agent.run, agent_input=agent_input)
         ended = time.perf_counter()
+        self._record_io(
+            kind="agent_io",
+            agent_name="narrative",
+            input_data=agent_input,
+            output_data=output,
+            extra={
+                "branch": "narrative",
+                "turn_id": agent_input.system_input.execution.turn_id,
+                "trace_id": agent_input.system_input.execution.trace_id,
+                "duration_ms": round((ended - started) * 1000, 3),
+            },
+        )
         branch_logs.append(
             {
                 "branch": "narrative",
@@ -542,6 +687,20 @@ class Phase3Engine(Phase2Engine):
                     apply_result = await asyncio.to_thread(self.state_patch_runtime.apply_patch, output)
 
                 ended = time.perf_counter()
+                self._record_io(
+                    kind="agent_io",
+                    agent_name="state_change",
+                    input_data=current_input,
+                    output_data=output,
+                    extra={
+                        "branch": "state",
+                        "turn_id": current_input.system_input.execution.turn_id,
+                        "trace_id": current_input.system_input.execution.trace_id,
+                        "retry_seq": retry_seq,
+                        "duration_ms": round((ended - started) * 1000, 3),
+                        "apply_status": "applied",
+                    },
+                )
                 branch_logs.append(
                     {
                         "branch": "state",
@@ -581,6 +740,20 @@ class Phase3Engine(Phase2Engine):
                     details=exc.details,
                 )
                 error_history.append(last_error.model_dump(mode="json"))
+                self._record_io(
+                    kind="agent_io",
+                    agent_name="state_change",
+                    input_data=current_input,
+                    output_data=output,
+                    extra={
+                        "branch": "state",
+                        "turn_id": current_input.system_input.execution.turn_id,
+                        "trace_id": current_input.system_input.execution.trace_id,
+                        "retry_seq": retry_seq,
+                        "apply_status": "patch_error",
+                        "patch_error": {"code": exc.code, "message": exc.message, "details": exc.details},
+                    },
+                )
 
         async with self._state_commit_lock:
             await asyncio.to_thread(self.world_state.restore_checkpoint, checkpoint)
@@ -595,6 +768,20 @@ class Phase3Engine(Phase2Engine):
             details={"checkpoint_version": checkpoint.get("version")},
         )
         ended = time.perf_counter()
+        self._record_io(
+            kind="agent_io",
+            agent_name="state_change",
+            input_data=base_input,
+            output_data={"fallback_error": fallback.model_dump(mode="json"), "error_history": error_history},
+            extra={
+                "branch": "state",
+                "turn_id": base_input.system_input.execution.turn_id,
+                "trace_id": base_input.system_input.execution.trace_id,
+                "retry_seq": max_retry,
+                "duration_ms": round((ended - started) * 1000, 3),
+                "apply_status": "fallback_exhausted",
+            },
+        )
         branch_logs.append(
             {
                 "branch": "state",

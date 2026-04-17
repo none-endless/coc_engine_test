@@ -77,11 +77,43 @@ class TestPhase1InputAndRule(unittest.TestCase):
         result = self.rule_system.run_coc_check(
             actor_id=self.player_id,
             attribute_value=50,
+            attribute_name="hp",
             random_source=_FixedRandom(1),
         )
         self.assertEqual(result.id, self.player_id)
         self.assertEqual(result.name, "玩家")
         self.assertEqual(result.result_type, "大成功")
+        self.assertEqual(result.check_type, "num")
+        self.assertEqual(result.attribute, "hp")
+
+    def test_against_check_result_format(self):
+        guard = CharacterEntity(
+            id="char-guard-0001",
+            name="守卫",
+            location="map-cellar-0001",
+            attributes={
+                "hp": Attribute(id="hp", name="生命", value=30, max_value=100, min_value=0),
+            },
+        )
+        store = self.world_state.get_store_copy()
+        store.characters[guard.id] = guard
+        self.world_state.reset(store)
+
+        result = self.rule_system.run_against_check(
+            actor_id=self.player_id,
+            actor_attribute_name="hp",
+            actor_attribute_value=60,
+            target_id=guard.id,
+            target_attribute_name="hp",
+            target_attribute_value=30,
+            actor_random_source=_FixedRandom(10),
+            target_random_source=_FixedRandom(80),
+        )
+
+        self.assertEqual(result.check_type, "against")
+        self.assertEqual(result.opposed_id, guard.id)
+        self.assertEqual(result.winner_id, self.player_id)
+        self.assertEqual(len(result.participants), 2)
 
 
 if __name__ == "__main__":

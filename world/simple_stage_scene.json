@@ -1,0 +1,141 @@
+{
+  "scene_name": "phase1-3 链路冒烟场景",
+  "default_actor_id": "char-player-0000",
+  "default_mode": "phase3",
+  "turn_start": 1,
+  "recommended_inputs": [
+    "\\look",
+    "我调查桌上的笔记",
+    "我攻击守卫",
+    "我走向走廊",
+    "我偷偷观察守卫"
+  ],
+  "store": {
+    "maps": {
+      "map-room-0001": {
+        "id": "map-room-0001",
+        "name": "值班室",
+        "description": {
+          "public": [
+            "一间狭小的值班室。",
+            "桌上放着几页值班笔记，门外通向一条昏暗走廊。"
+          ],
+          "hint": "",
+          "add": []
+        },
+        "connections": [
+          {
+            "id": "map-hall-0002",
+            "name": "走廊门",
+            "direction": "east",
+            "description": "一扇通向走廊的门",
+            "is_locked": false,
+            "condition": null
+          }
+        ],
+        "extensions": {}
+      },
+      "map-hall-0002": {
+        "id": "map-hall-0002",
+        "name": "走廊",
+        "description": {
+          "public": [
+            "这是一条光线很差的长走廊。",
+            "空气里有淡淡的铁锈味，远处传来脚步声。"
+          ],
+          "hint": "",
+          "add": []
+        },
+        "connections": [
+          {
+            "id": "map-room-0001",
+            "name": "值班室门",
+            "direction": "west",
+            "description": "返回值班室",
+            "is_locked": false,
+            "condition": null
+          }
+        ],
+        "extensions": {}
+      }
+    },
+    "characters": {
+      "char-player-0000": {
+        "id": "char-player-0000",
+        "name": "测试玩家",
+        "basic_info": "",
+        "location": "map-room-0001",
+        "attributes": {
+          "fight": {
+            "id": "fight",
+            "name": "格斗",
+            "value": 65,
+            "max_value": 100,
+            "min_value": 0,
+            "description": "近身战斗能力"
+          },
+          "investigation": {
+            "id": "investigation",
+            "name": "侦查",
+            "value": 60,
+            "max_value": 100,
+            "min_value": 0,
+            "description": "调查与搜索能力"
+          },
+          "stealth": {
+            "id": "stealth",
+            "name": "潜行",
+            "value": 50,
+            "max_value": 100,
+            "min_value": 0,
+            "description": "隐蔽行动能力"
+          }
+        },
+        "inventory": {},
+        "extensions": {}
+      },
+      "char-guard-0001": {
+        "id": "char-guard-0001",
+        "name": "守卫",
+        "basic_info": "值班室附近的普通守卫。",
+        "location": "map-room-0001",
+        "attributes": {
+          "fight": {
+            "id": "fight",
+            "name": "格斗",
+            "value": 45,
+            "max_value": 100,
+            "min_value": 0,
+            "description": "近身战斗能力"
+          },
+          "investigation": {
+            "id": "investigation",
+            "name": "侦查",
+            "value": 35,
+            "max_value": 100,
+            "min_value": 0,
+            "description": "调查与搜索能力"
+          }
+        },
+        "inventory": {},
+        "extensions": {}
+      }
+    },
+    "items": {
+      "item-note-0001": {
+        "id": "item-note-0001",
+        "name": "值班笔记",
+        "description": {
+          "public": [
+            "几页记录着出入时间的值班笔记。"
+          ],
+          "hint": "",
+          "add": []
+        },
+        "location": "map-room-0001",
+        "is_portable": true,
+        "extensions": {}
+      }
+    }
+  }
+}

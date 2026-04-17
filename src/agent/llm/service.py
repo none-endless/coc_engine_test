@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Type, TypeVar
 from urllib import request
 from urllib.error import HTTPError, URLError
@@ -24,12 +26,19 @@ class LLMValidationError(LLMServiceError):
 
 
 TransportCallable = Callable[[str, Dict[str, str], Dict[str, Any], int], Dict[str, Any]]
+IoRecorder = Callable[[Dict[str, Any]], None]
 
 
 class LLMServiceBase:
-    def __init__(self, config: EngineConfig, transport: Optional[TransportCallable] = None) -> None:
+    def __init__(
+        self,
+        config: EngineConfig,
+        transport: Optional[TransportCallable] = None,
+        io_recorder: Optional[IoRecorder] = None,
+    ) -> None:
         self.config = config
         self.transport = transport or self._default_transport
+        self.io_recorder = io_recorder
 
     def call_llm_json(
         self,
@@ -44,31 +53,95 @@ class LLMServiceBase:
         attempts = retry_budget + 1
         last_exc: Optional[Exception] = None
         dynamic_feedback = validation_feedback
+        message_payload: Dict[str, Any] = dict(user_payload)
 
-        for _ in range(attempts):
+        for attempt_index in range(attempts):
+            started_at = datetime.now(timezone.utc).isoformat()
+            started = time.perf_counter()
+            raw_payload: Optional[Dict[str, Any]] = None
             try:
                 message_payload = dict(user_payload)
                 if dynamic_feedback:
                     message_payload["validation_feedback"] = dynamic_feedback
 
-                raw = self._chat_completion(
+                raw_payload = self._chat_completion(
                     agent_name=agent_name,
                     system_prompt=system_prompt,
                     user_payload=message_payload,
                     output_model=output_model,
                 )
-                return output_model.model_validate(raw)
+                parsed = output_model.model_validate(raw_payload)
+                self._record_io(
+                    {
+                        "kind": "llm_call",
+                        "status": "success",
+                        "agent_name": agent_name,
+                        "attempt_index": attempt_index,
+                        "attempt_count": attempts,
+                        "started_at": started_at,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+                        "system_prompt": system_prompt,
+                        "user_payload": message_payload,
+                        "response_model": output_model.__name__,
+                        "raw_output": raw_payload,
+                        "parsed_output": parsed.model_dump(mode="json"),
+                    }
+                )
+                return parsed
             except ValidationError as exc:
                 last_exc = exc
                 dynamic_feedback = self._format_validation_feedback(exc)
+                self._record_io(
+                    {
+                        "kind": "llm_call",
+                        "status": "validation_error",
+                        "agent_name": agent_name,
+                        "attempt_index": attempt_index,
+                        "attempt_count": attempts,
+                        "started_at": started_at,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+                        "system_prompt": system_prompt,
+                        "user_payload": message_payload,
+                        "response_model": output_model.__name__,
+                        "raw_output": raw_payload,
+                        "validation_errors": exc.errors(),
+                        "validation_feedback": dynamic_feedback,
+                    }
+                )
             except (HTTPError, URLError, TimeoutError, ValueError, KeyError, json.JSONDecodeError) as exc:
                 last_exc = exc
+                self._record_io(
+                    {
+                        "kind": "llm_call",
+                        "status": "error",
+                        "agent_name": agent_name,
+                        "attempt_index": attempt_index,
+                        "attempt_count": attempts,
+                        "started_at": started_at,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 3),
+                        "system_prompt": system_prompt,
+                        "user_payload": message_payload,
+                        "response_model": output_model.__name__,
+                        "raw_output": raw_payload,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    }
+                )
 
         if isinstance(last_exc, ValidationError):
             raise LLMValidationError("LLM output validation failed", errors=last_exc.errors()) from last_exc
         if last_exc is not None:
             raise LLMServiceError(f"LLM call failed: {last_exc}") from last_exc
         raise LLMServiceError("LLM call failed with unknown error")
+
+    def _record_io(self, payload: Dict[str, Any]) -> None:
+        if self.io_recorder is None:
+            return
+        try:
+            self.io_recorder(payload)
+        except Exception:
+            # Logging must never break the agent flow.
+            return
 
     def _chat_completion(
         self,

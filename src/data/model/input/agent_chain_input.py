@@ -81,8 +81,14 @@ class E3RuleResult(BaseModel):
 	e3: 规则结算事实
 	由 rule_system 产出的客观判断。
 	"""
-	intent: str = Field(default="",description="直接来自dm_agent解析出的意图")
-	success: str = Field(default="", description="成功,失败,还是大成功,大失败")
+	intent: str = Field(default="", description="直接来自 dm_agent 解析出的意图")
+	check_type: Optional[str] = Field(default=None, description="本次规则结算的鉴定类型：num/against；无鉴定时为 null")
+	success: str = Field(default="", description="触发方最终结果：成功/失败/大成功/大失败")
+	difficulty: Optional[str] = Field(default=None, description="本次鉴定难度")
+	actor_id: Optional[str] = Field(default=None, description="本次主动方角色 ID")
+	opposed_id: Optional[str] = Field(default=None, description="本次对抗中的对手角色 ID")
+	winner_id: Optional[str] = Field(default=None, description="本次规则结算的胜者 ID")
+	affected_ids: List[str] = Field(default_factory=list, description="本次结算直接作用到的角色 ID 列表")
 
 
 

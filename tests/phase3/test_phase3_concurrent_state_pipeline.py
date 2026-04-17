@@ -18,12 +18,14 @@ from src.data.model.base import (
     Attribute,
     CharacterEntity,
     Description,
+    ExtensionSchemaItem,
+    ExtensionSchemaRegistry,
     MapConnection,
     MapEntity,
     WorldEntityStore,
 )
 from src.data.model.world_state import WorldState
-from src.engine.engine import Phase3Engine
+from src.engine.engine import Engine
 from src.rule.state_patch import ERROR_FIELD_NOT_MUTABLE, StatePatchError, StatePatchRuntime
 
 
@@ -157,7 +159,7 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
         self.world = world
 
     def test_parallel_branches_share_same_turn_id(self):
-        engine = Phase3Engine(world_state=self.world, llm_service=FakeLLMService())
+        engine = Engine(world_state=self.world, mode="phase3", llm_service=FakeLLMService())
         result = engine.run_turn(
             raw_input="我走向走廊",
             actor_id="char-player-0000",
@@ -223,8 +225,67 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
             runtime.apply_patch(patch_output=patch_index)
         self.assertEqual(idx_err.exception.code, ERROR_FIELD_NOT_MUTABLE)
 
+    def test_extension_registry_mutable_is_enforced(self):
+        world = WorldState()
+        room = MapEntity(
+            id="map-room-0001",
+            name="房间",
+            description=Description(public=["一间狭小的房间"]),
+            extensions={"quest.stage": "locked"},
+        )
+        player = CharacterEntity(
+            id="char-player-0000",
+            name="玩家",
+            location=room.id,
+        )
+        world.reset(
+            WorldEntityStore(
+                maps={room.id: room},
+                characters={player.id: player},
+                items={},
+                extension_registry=ExtensionSchemaRegistry(
+                    fields={
+                        "quest.stage": ExtensionSchemaItem(
+                            key="quest.stage",
+                            mutable=False,
+                            value_type="string",
+                        )
+                    }
+                ),
+            )
+        )
+        runtime = StatePatchRuntime(world_state=world)
+        expected_version = int(world.get_snapshot()["version"])
+
+        patch = StateAgentOutput.model_validate(
+            {
+                "llm_output": {
+                    "changes": [
+                        {
+                            "op": "SET",
+                            "target_path": "map-room-0001.extensions.quest.stage",
+                            "value": "opened",
+                        }
+                    ]
+                },
+                "system_output": {
+                    "patch_meta": {
+                        "trace_id": 3,
+                        "turn_id": 1,
+                        "retry_seq": 0,
+                        "patch_id": "p3",
+                        "expected_version": expected_version,
+                    }
+                },
+            }
+        )
+
+        with self.assertRaises(StatePatchError) as ext_err:
+            runtime.apply_patch(patch_output=patch)
+        self.assertEqual(ext_err.exception.code, ERROR_FIELD_NOT_MUTABLE)
+
     def test_three_failures_trigger_rollback_and_fallback(self):
-        engine = Phase3Engine(world_state=self.world, llm_service=FakeLLMService(always_invalid_state_patch=True))
+        engine = Engine(world_state=self.world, mode="phase3", llm_service=FakeLLMService(always_invalid_state_patch=True))
         before = copy.deepcopy(self.world.get_snapshot())
 
         result = engine.run_turn(

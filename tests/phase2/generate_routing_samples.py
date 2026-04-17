@@ -4,7 +4,7 @@ from pathlib import Path
 
 from src.data.model.base import Attribute, CharacterEntity, Description, MapEntity, WorldEntityStore
 from src.data.model.world_state import WorldState
-from src.engine.engine import Phase2Engine
+from src.engine.engine import Engine
 
 
 def main() -> None:
@@ -39,7 +39,7 @@ def main() -> None:
         )
     )
 
-    engine = Phase2Engine(world_state=world)
+    engine = Engine(world_state=world, mode="phase2")
 
     non_check = engine.run_turn(
         raw_input="我和守卫聊聊最近的情况",

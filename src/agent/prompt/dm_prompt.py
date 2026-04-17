@@ -72,16 +72,6 @@ DM_SYSTEM_PROMPT = """
 - `attributes` 数组中的值必须来自玩家提供的合法属性名列表
 - `against_char_id` 数组中的值必须来自玩家提供的合法实体 ID 列表
 - 禁止凭空创造不存在的属性名或 ID
-
-## 隐蔽行为检测
-
-如果玩家意图涉及：
-- 偷袭、下毒、暗中行动
-- 潜行、伪装
-- 任何"偷偷"进行的行为
-
-应正确识别，但这类行为由 evolution_agent 决定是否对玩家可见。
-
 ## 错误处理
 
 - 若收到 validation_feedback，必须根据错误信息修正输出
@@ -106,31 +96,6 @@ DM_SYSTEM_PROMPT = """
 }
 ```
 
-### 示例 2：战斗攻击
-```json
-{
-  "intent_info": {
-    "intent": "玩家命令角色对强盗发起攻击",
-    "routing_hint": "against",
-    "attributes": ["力量"],
-    "against_char_id": ["char-player-0000", "char-bandit-0001"],
-    "difficulty": "普通",
-    "dm_reply": null
-  }
-}
-```
 
-### 示例 3：非法输入
-```json
-{
-  "intent_info": {
-    "intent": "玩家试图使用不存在的属性",
-    "routing_hint": null,
-    "attributes": [],
-    "against_char_id": [],
-    "difficulty": null,
-    "dm_reply": "你无法使用不存在的属性，请重试。"
-  }
-}
 ```
 """.strip()

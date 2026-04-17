@@ -9,10 +9,10 @@ from src.config.loader import ConfigLoader
 from src.agent.llm.service import LLMServiceBase
 from src.data.model.base import Attribute, CharacterEntity, Description, MapEntity, WorldEntityStore
 from src.data.model.world_state import WorldState
-from src.engine.engine import Phase2Engine
+from src.engine.engine import Engine
 
 
-def _build_engine() -> Phase2Engine:
+def _build_engine() -> Engine:
     cfg = ConfigLoader.load(config_path="config/config.yaml")
     # Keep real call but avoid oversized output and timeout too low.
     cfg.llm.max_tokens = min(int(cfg.llm.max_tokens), 1024)
@@ -51,10 +51,10 @@ def _build_engine() -> Phase2Engine:
         )
     )
 
-    return Phase2Engine(world_state=world, dm_max_retries=2, llm_service=service)
+    return Engine(world_state=world, mode="phase2", dm_max_retries=2, llm_service=service)
 
 
-def _run_case(engine: Phase2Engine, index: int, text: str) -> Dict[str, Any]:
+def _run_case(engine: Engine, index: int, text: str) -> Dict[str, Any]:
     turn_id = index
     trace_id = 9100 + index
     print(f"[case-{index}] input={text}")

@@ -1,8 +1,94 @@
 import unittest
 
+from pydantic import BaseModel
+
+from src.config.loader import ConfigLoader
+from src.data.model.agent_output import DmAgentLlmOutput, EvolutionAgentLlmOutput
 from src.data.model.base import Attribute, CharacterEntity, Description, MapEntity, WorldEntityStore
 from src.data.model.world_state import WorldState
-from src.engine.engine import Phase2Engine
+from src.engine.engine import Engine
+
+
+class FakeLLMService:
+    def __init__(self) -> None:
+        self.config = ConfigLoader.load()
+
+    def call_llm_json(
+        self,
+        *,
+        agent_name,
+        system_prompt,
+        user_payload,
+        output_model,
+        retry_budget,
+        validation_feedback=None,
+    ) -> BaseModel:
+        raw_text = user_payload.get("e1", {}).get("raw_text") or user_payload.get("raw_text", "")
+
+        if output_model is DmAgentLlmOutput:
+            if "攻击守卫" in raw_text:
+                payload = {
+                    "intent_info": {
+                        "intent": "attack",
+                        "routing_hint": "against",
+                        "attributes": ["fight"],
+                        "against_char_id": ["char-player-0000", "char-guard-0001"],
+                        "difficulty": None,
+                        "dm_reply": None,
+                    }
+                }
+            elif "调查桌上的文件" in raw_text:
+                payload = {
+                    "intent_info": {
+                        "intent": "investigate",
+                        "routing_hint": "num",
+                        "attributes": ["investigation"],
+                        "against_char_id": ["char-player-0000"],
+                        "difficulty": None,
+                        "dm_reply": None,
+                    }
+                }
+            elif "偷偷给守卫下毒" in raw_text:
+                payload = {
+                    "intent_info": {
+                        "intent": "poison",
+                        "routing_hint": "num",
+                        "attributes": ["stealth"],
+                        "against_char_id": ["char-player-0000"],
+                        "difficulty": None,
+                        "dm_reply": None,
+                    }
+                }
+            else:
+                payload = {
+                    "intent_info": {
+                        "intent": "talk",
+                        "routing_hint": None,
+                        "attributes": [],
+                        "against_char_id": [],
+                        "difficulty": None,
+                        "dm_reply": None,
+                    }
+                }
+            return output_model.model_validate(payload)
+
+        if output_model is EvolutionAgentLlmOutput:
+            visible = "偷偷给守卫下毒" not in raw_text
+            summary = "玩家执行了行动"
+            if "调查桌上的文件" in raw_text:
+                summary = "玩家调查了桌上的文件"
+            elif "攻击守卫" in raw_text:
+                summary = "玩家向守卫发起了攻击"
+            elif "偷偷给守卫下毒" in raw_text:
+                summary = "玩家尝试偷偷给守卫下毒"
+            return output_model.model_validate(
+                {
+                    "summary": summary,
+                    "visible_to_player": visible,
+                }
+            )
+
+        raise AssertionError(f"unsupported output model: {output_model}")
 
 
 class TestPhase2SerialPipeline(unittest.TestCase):
@@ -39,7 +125,7 @@ class TestPhase2SerialPipeline(unittest.TestCase):
                 items={},
             )
         )
-        self.engine = Phase2Engine(world_state=world, dm_max_retries=2)
+        self.engine = Engine(world_state=world, mode="phase2", dm_max_retries=2, llm_service=FakeLLMService())
 
     def test_dm_output_has_valid_check_target_ids(self):
         result = self.engine.run_turn(

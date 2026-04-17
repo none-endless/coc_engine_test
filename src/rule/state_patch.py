@@ -49,6 +49,7 @@ class StatePatchRuntime:
     def apply_patch(self, patch_output: StateAgentOutput) -> StatePatchApplyResult:
         patch_meta = patch_output.system_output.patch_meta
         snapshot = copy.deepcopy(self.world_state.get_snapshot())
+        extension_registry = self.world_state.get_store_copy().extension_registry
 
         expected_version = patch_meta.expected_version
         if expected_version is not None and snapshot.get("version") != expected_version:
@@ -67,7 +68,7 @@ class StatePatchRuntime:
         for op in ordered:
             if op.op == StateOperator.ASSERT:
                 continue
-            self._apply_single_op(op=op, snapshot=working)
+            self._apply_single_op(op=op, snapshot=working, extension_registry=extension_registry)
             non_assert_count += 1
 
         store = self.world_state.get_store_copy()
@@ -128,13 +129,13 @@ class StatePatchRuntime:
             + buckets[StateOperator.REMOVE]
         )
 
-    def _apply_single_op(self, op: StateChangeOp, snapshot: Dict[str, Any]) -> None:
+    def _apply_single_op(self, op: StateChangeOp, snapshot: Dict[str, Any], extension_registry) -> None:
         if not op.target_path:
             raise StatePatchError(ERROR_FIELD_NOT_FOUND, "target_path is required")
 
         entity_id, suffix = self._split_target_path(op.target_path)
         entity_type, entity = self._get_entity(snapshot=snapshot, entity_id=entity_id)
-        self._validate_mutable(entity=entity, path_suffix=suffix)
+        self._validate_mutable(entity=entity, path_suffix=suffix, extension_registry=extension_registry, op=op)
 
         parent, key, current = self._resolve_parent_and_value(entity=entity, path=suffix)
 
@@ -232,7 +233,7 @@ class StatePatchRuntime:
         return entity_type, entity
 
     @staticmethod
-    def _validate_mutable(entity: Dict[str, Any], path_suffix: str) -> None:
+    def _validate_mutable(entity: Dict[str, Any], path_suffix: str, extension_registry, op: StateChangeOp) -> None:
         forbidden_prefixes = (
             "description.public",
             "char_index",
@@ -247,6 +248,31 @@ class StatePatchRuntime:
             key = path_suffix[len("extensions.") :]
             if key not in entity.get("extensions", {}):
                 raise StatePatchError(ERROR_FIELD_NOT_FOUND, f"extension field not found: {key}")
+            if extension_registry is None or key not in extension_registry.fields:
+                raise StatePatchError(ERROR_FIELD_NOT_MUTABLE, f"extension field is not registered: {key}")
+            schema_item = extension_registry.fields[key]
+            if not schema_item.mutable:
+                raise StatePatchError(ERROR_FIELD_NOT_MUTABLE, f"extension field is not mutable: {key}")
+            StatePatchRuntime._validate_extension_value_type(
+                value_type=schema_item.value_type,
+                op=op,
+            )
+
+    @staticmethod
+    def _validate_extension_value_type(value_type: str, op: StateChangeOp) -> None:
+        """按 schema registry 的 value_type 对扩展字段做最小类型约束。"""
+        if value_type == "any":
+            return
+        if value_type == "string" and not isinstance(op.value, str):
+            raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "extension field expects string value")
+        if value_type == "number" and not isinstance(op.value, (int, float)):
+            raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "extension field expects number value")
+        if value_type == "boolean" and not isinstance(op.value, bool):
+            raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "extension field expects boolean value")
+        if value_type == "list" and not isinstance(op.value, list):
+            raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "extension field expects list value")
+        if value_type == "object" and not isinstance(op.value, dict):
+            raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "extension field expects object value")
 
     def _resolve_parent_and_value(self, entity: Dict[str, Any], path: str) -> Tuple[Any, Any, Any]:
         parts = self._split_parts(path)

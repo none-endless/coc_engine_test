@@ -119,6 +119,37 @@ class MergerAgentOutput(AgentOutputEnvelope):
 	system_output: Optional[NoSystemOutput] = Field(default=None, description="系统输出（无）")
 
 
+class CocCheckParticipant(BaseModel):
+	"""单个参与方的鉴定结果。"""
+
+	id: str = Field(default="", description="参与方角色 ID")
+	name: str = Field(default="", description="参与方角色名称")
+	attribute: str = Field(default="", description="本次使用的属性名称")
+	difficulty: Optional[str] = Field(default=None, description="本次鉴定难度")
+	result_type: str = Field(default="", description="该参与方的原始结果：成功/失败/大成功/大失败")
+	roll: int = Field(default=0, description="该参与方的骰点")
+	target: int = Field(default=0, description="该参与方在当前难度下的目标值")
+	is_winner: bool = Field(default=False, description="该参与方是否为本次对抗的胜者")
+
+
+class CocCheckResult(BaseModel):
+	"""rule_system 的结构化鉴定结果。"""
+
+	check_type: str = Field(default="num", description="鉴定类型：num/against")
+	id: str = Field(default="", description="触发鉴定的角色 ID")
+	name: str = Field(default="", description="触发鉴定的角色名称")
+	attribute: str = Field(default="", description="触发方使用的属性名称")
+	difficulty: Optional[str] = Field(default=None, description="鉴定难度")
+	result_type: str = Field(default="", description="触发方最终结果：成功/失败/大成功/大失败")
+	roll: int = Field(default=0, description="本次骰点结果")
+	target: int = Field(default=0, description="本次鉴定目标值")
+	opposed_id: Optional[str] = Field(default=None, description="对抗检定中的对手 ID")
+	opposed_name: Optional[str] = Field(default=None, description="对抗检定中的对手名称")
+	winner_id: Optional[str] = Field(default=None, description="本次检定的胜者 ID")
+	affected_ids: List[str] = Field(default_factory=list, description="本次检定直接作用到的角色 ID 列表")
+	participants: List[CocCheckParticipant] = Field(default_factory=list, description="全部参与方的结构化结果")
+
+
 class StateOperator(str, Enum):
 	"""状态变更操作符。"""
 

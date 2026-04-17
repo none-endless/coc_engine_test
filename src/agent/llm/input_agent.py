@@ -117,8 +117,6 @@ class DMAgent:
 
 		if not attrs:
 			errors.append("check routing requires attributes")
-		if not ids:
-			errors.append("check routing requires against_char_id")
 
 		for attr in attrs:
 			if attr not in available_attributes:
@@ -128,7 +126,14 @@ class DMAgent:
 			if char_id not in valid_character_ids:
 				errors.append(f"invalid char id: {char_id}")
 
-		if intent.routing_hint == "against" and len(ids) < 2:
+		if intent.routing_hint == "num":
+			if len(ids) > 1:
+				errors.append("num routing should not include multiple against_char_id values")
+			return errors
+
+		if not ids:
+			errors.append("against routing requires against_char_id")
+		elif len(ids) < 2:
 			errors.append("against routing requires at least 2 character ids")
 
 		return errors
