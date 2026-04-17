@@ -5,7 +5,7 @@ Agent Memory 数据结构
 
 from datetime import datetime
 from typing import List, Dict, Optional, Any, TYPE_CHECKING
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # 避免循环导入，仅在类型检查时导入
 if TYPE_CHECKING:
@@ -42,22 +42,44 @@ class DmMemory(BaseModel):
     DM 的记忆
 
     说明：
-    - dialogues: 最近5回合的对话信息，超出部分被压入 dialogue_log
+    - dialogues: 最近若干回合的对话信息，超出部分被压入 dialogue_log
     - dialogue_log: 完整对话日志，用于 debug 和回溯
+    - current_event: 当前对话焦点，由系统维护
+    - key_facts: 当前关键事实，由系统维护
+    - memory_turns: recent 对话保留回合数，由配置驱动
     """
+    model_config = ConfigDict(
+        populate_by_name=True,
+        serialize_by_alias=True,
+    )
+
     dialogues: List["DialogueEntry"] = Field(
         default_factory=list,
-        description="最近5回合的对话信息，超出部分被压入 dialogue_log"
+        description="最近若干回合的对话信息，超出部分被压入 dialogue_log"
     )
     dialogue_log: List["DialogueLogItem"] = Field(
         default_factory=list,
         description="完整对话日志，仅用于 debug 与回溯"
     )
+    current_event: str = Field(
+        default="",
+        alias="currentEvent",
+        description="当前对话焦点，由系统维护"
+    )
+    key_facts: List[str] = Field(
+        default_factory=list,
+        alias="keyFacts",
+        description="关键事实，由系统维护"
+    )
+    memory_turns: int = Field(
+        default=5,
+        description="DM 对话记忆保留回合数"
+    )
 
-    def _append_with_rollover(self, entry: "DialogueEntry", max_recent: int = 5) -> None:
+    def _append_with_rollover(self, entry: "DialogueEntry") -> None:
         """追加 recent，超出阈值后把最早条目压入 log。"""
         self.dialogues.append(entry)
-        if len(self.dialogues) > max_recent:
+        if len(self.dialogues) > self.memory_turns:
             oldest = self.dialogues.pop(0)
             self.dialogue_log.append(DialogueLogItem(
                 turn=oldest.turn,
@@ -80,6 +102,7 @@ class DmMemory(BaseModel):
             speaker=speaker,
             content=content
         ))
+        self.current_event = content
 
     def get_recent_dialogues(self, count: int = 5) -> List["DialogueEntry"]:
         """

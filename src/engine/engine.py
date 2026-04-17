@@ -14,6 +14,8 @@ from src.agent.llm.statechange_agent import StateChangeAgent
 from src.config.loader import ConfigLoader
 from src.data.model.agent_input import (
     AgentIdentity,
+    AvailableAttributeRef,
+    AvailableCharacterRef,
     DmAgentInput,
     DmAgentLlmInput,
     DmAgentSystemInput,
@@ -92,7 +94,6 @@ class Engine:
         self._routing_logs: List[Dict[str, Any]] = []
         self._io_logger = io_logger
         self._narrative_info = NarrativeInfo()
-        self._dm_memory = DmMemory()
 
         self.input_system = InputSystem(rule_system=self.rule_system, dm_handler=self._dm_handler)
 
@@ -100,6 +101,7 @@ class Engine:
         if cfg is None:
             cfg = ConfigLoader.load(config_path=config_path)
         self.config = cfg
+        self._dm_memory = DmMemory(memory_turns=self.config.agent.dm.memory_turns)
 
         self.state_agent = StateChangeAgent(llm_service=self.dm_agent.llm_service)
         self.npc_scheduler_agent = NpcSchedulerAgent(llm_service=self.dm_agent.llm_service)
@@ -129,6 +131,14 @@ class Engine:
                 world_info=views.dm_view,
                 narrative_info=self._narrative_info,
                 agent_memory=self._dm_memory,
+                available_attributes=[
+                    AvailableAttributeRef(id=attr_id, name=attr.name)
+                    for attr_id, attr in actor.attributes.items()
+                ],
+                valid_characters=[
+                    AvailableCharacterRef(id=char_id, name=self.world_state.get_character(char_id).name)
+                    for char_id in sorted(self.world_state.get_snapshot().get("characters", {}).keys())
+                ],
             ),
             system_input=DmAgentSystemInput(
                 chain_raw=DmAgentChainInput(e1=chain_e1),
@@ -148,6 +158,12 @@ class Engine:
             agent_input=dm_input,
             available_attributes=available_attrs,
             valid_character_ids=valid_ids,
+        )
+        self._update_dm_memory(
+            turn_id=envelope.turn,
+            actor_id=self._current_actor_id,
+            raw_input=envelope.raw_input,
+            dm_result=analyzed,
         )
         self._record_io(
             kind="agent_io",
@@ -210,6 +226,23 @@ class Engine:
 
     def get_routing_logs(self) -> List[Dict[str, Any]]:
         return list(self._routing_logs)
+
+    def _update_dm_memory(
+        self,
+        *,
+        turn_id: int,
+        actor_id: str,
+        raw_input: str,
+        dm_result: DmAnalyzeResult,
+    ) -> None:
+        """维护 DM 对话记忆，使下一轮输入带上最近对话上下文。"""
+        self._dm_memory.add_dialogue(turn=turn_id, speaker=actor_id, content=raw_input)
+
+        dm_reply = dm_result.intent_info.dm_reply
+        if dm_reply:
+            self._dm_memory.add_dialogue(turn=turn_id, speaker="dmagent", content=dm_reply)
+
+        self._dm_memory.current_event = raw_input
 
     def _record_io(self, *, kind: str, agent_name: str, input_data, output_data=None, extra: Optional[Dict[str, Any]] = None) -> None:
         if self._io_logger is None:

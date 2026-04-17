@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, Field
 
 from src.agent.llm.service import LLMServiceBase, LLMValidationError
 from src.agent.prompt.dm_prompt import DM_SYSTEM_PROMPT
-from src.data.model.agent_input import DmAgentInput
+from src.data.model.agent_input import AvailableAttributeRef, DmAgentInput
 from src.data.model.agent_output import DmAgentLlmOutput, DmAgentOutput, DmAgentSystemOutput
 
 
@@ -37,6 +37,8 @@ class DMAgent:
 		retries = 0
 		errors: List[str] = []
 		feedback: Optional[str] = None
+		attr_ids, attr_name_to_id = self._build_attribute_refs(agent_input.llm_input.available_attributes)
+		char_ids = set(agent_input.llm_input.valid_characters and [char.id for char in agent_input.llm_input.valid_characters] or list(valid_character_ids))
 
 		llm_output: Optional[DmAgentLlmOutput] = None
 		for _ in range(self.max_retries + 1):
@@ -59,12 +61,18 @@ class DMAgent:
 				llm_output=llm_output,
 				available_attributes=available_attributes,
 				valid_character_ids=valid_character_ids,
+				attribute_name_to_id=attr_name_to_id,
 			)
 			if not errors:
 				break
 
 			retries += 1
-			feedback = " ; ".join(errors)
+			feedback = self._build_validation_feedback(
+				errors=errors,
+				attribute_ids=attr_ids,
+				attribute_name_to_id=attr_name_to_id,
+				valid_character_ids=char_ids,
+			)
 
 		if llm_output is None:
 			raise RuntimeError("DM agent produced no output")
@@ -98,6 +106,7 @@ class DMAgent:
 		llm_output: DmAgentLlmOutput,
 		available_attributes: List[str],
 		valid_character_ids: Set[str],
+		attribute_name_to_id: Optional[Dict[str, str]] = None,
 	) -> List[str]:
 		errors: List[str] = []
 		intent = llm_output.intent_info
@@ -118,9 +127,17 @@ class DMAgent:
 		if not attrs:
 			errors.append("check routing requires attributes")
 
+		normalized_attrs: List[str] = []
+		attribute_name_to_id = attribute_name_to_id or {}
 		for attr in attrs:
-			if attr not in available_attributes:
+			canonical_attr = attribute_name_to_id.get(attr, attr)
+			if canonical_attr not in available_attributes:
 				errors.append(f"invalid attribute: {attr}")
+				continue
+			normalized_attrs.append(canonical_attr)
+
+		if normalized_attrs:
+			intent.attributes = normalized_attrs
 
 		for char_id in ids:
 			if char_id not in valid_character_ids:
@@ -137,3 +154,34 @@ class DMAgent:
 			errors.append("against routing requires at least 2 character ids")
 
 		return errors
+
+	@staticmethod
+	def _build_attribute_refs(available_attributes: List[AvailableAttributeRef]) -> Tuple[List[str], Dict[str, str]]:
+		attr_ids: List[str] = []
+		name_to_id: Dict[str, str] = {}
+		for attr in available_attributes:
+			if not attr.id:
+				continue
+			attr_ids.append(attr.id)
+			if attr.name:
+				name_to_id[attr.name] = attr.id
+		return attr_ids, name_to_id
+
+	@staticmethod
+	def _build_validation_feedback(
+		*,
+		errors: List[str],
+		attribute_ids: List[str],
+		attribute_name_to_id: Dict[str, str],
+		valid_character_ids: Set[str],
+	) -> str:
+		parts = list(errors)
+		if attribute_ids:
+			parts.append(f"allowed attribute ids: {', '.join(attribute_ids)}")
+		if attribute_name_to_id:
+			name_pairs = [f"{name}->{attr_id}" for name, attr_id in sorted(attribute_name_to_id.items())]
+			parts.append(f"attribute name to id mapping: {', '.join(name_pairs)}")
+		if valid_character_ids:
+			parts.append(f"valid character ids: {', '.join(sorted(valid_character_ids))}")
+		parts.append("when you output attributes or against_char_id, you must return exact ids from the provided lists")
+		return " ; ".join(parts)

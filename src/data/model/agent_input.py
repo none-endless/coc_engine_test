@@ -102,6 +102,20 @@ class StateErrorFeedback(BaseModel):
     fix_hint: str = Field(default="", description="系统给出的修正建议")
 
 
+class AvailableAttributeRef(BaseModel):
+    """DM 可用属性引用。"""
+
+    id: str = Field(default="", description="属性 ID，DM 输出时必须返回此值")
+    name: str = Field(default="", description="属性展示名，仅用于语义提示")
+
+
+class AvailableCharacterRef(BaseModel):
+    """DM 可用角色引用。"""
+
+    id: str = Field(default="", description="角色 ID，DM 输出 against_char_id 时必须返回此值")
+    name: str = Field(default="", description="角色展示名，仅用于语义提示")
+
+
 class DmAgentLlmInput(BaseModel):
     """dmagent 的 LLM 输入。"""
 
@@ -109,6 +123,8 @@ class DmAgentLlmInput(BaseModel):
     world_info: DMWorldView = Field(description="世界信息（描述层视图）")
     narrative_info: NarrativeInfo = Field(description="叙事信息")
     agent_memory: DmMemory = Field(description="DM 记忆")
+    available_attributes: list[AvailableAttributeRef] = Field(default_factory=list, description="当前玩家可用于鉴定的属性列表，输出时必须使用 id")
+    valid_characters: list[AvailableCharacterRef] = Field(default_factory=list, description="当前可引用的合法角色列表，输出 against_char_id 时必须使用 id")
 
 
 class DmAgentSystemInput(BaseModel):

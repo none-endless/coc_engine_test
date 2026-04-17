@@ -32,7 +32,7 @@ DM_SYSTEM_PROMPT = """
                                    //   null = 不需要鉴定，直接进入 evolution
                                    //   "num" = 需要数值鉴定，进入 ruleSystem
                                    //   "against" = 需要对抗鉴定，进入 ruleSystem
-    "attributes": [],             // 鉴定所需的属性名称列表，如 ["力量", "敏捷"]
+    "attributes": [],             // 鉴定所需的属性 ID 列表，必须使用 available_attributes 中提供的 id，如 ["fight"]
                                    // 当 routing_hint 为 null 时必须为空数组
     "against_char_id": [],        // 对抗鉴定参与的对象ID列表
                                    // 当 routing_hint 为 null 时必须为空数组
@@ -69,6 +69,12 @@ DM_SYSTEM_PROMPT = """
 
 ## 属性和 ID 约束
 
+- 输入中会提供：
+  - `available_attributes`: 当前玩家可用属性列表，每项包含 `id` 和 `name`
+  - `valid_characters`: 当前可引用角色列表，每项包含 `id` 和 `name`
+- 你在输出中必须使用这些列表里的 **id**，不能输出展示名，也不能自行创造新字段值
+- 例如如果玩家想“攻击”，而可用属性列表里有 `{id: "fight", name: "格斗"}`，则应输出 `"attributes": ["fight"]`
+
 - `attributes` 数组中的值必须来自玩家提供的合法属性名列表
 - `against_char_id` 数组中的值必须来自玩家提供的合法实体 ID 列表
 - 禁止凭空创造不存在的属性名或 ID
@@ -79,6 +85,7 @@ DM_SYSTEM_PROMPT = """
   - `invalid attribute: xxx` - 属性名不存在
   - `invalid char id: xxx` - 实体 ID 不存在
   - `routing_hint is null but attributes is not empty` - 不需要鉴定但填写了属性
+  - 系统还会告诉你 allowed attribute ids、属性名到 id 的映射、以及合法角色 id 列表；修正时必须直接使用这些 id
 
 ## 示例
 
@@ -90,6 +97,25 @@ DM_SYSTEM_PROMPT = """
     "routing_hint": null,
     "attributes": [],
     "against_char_id": [],
+    "difficulty": null,
+    "dm_reply": null
+  }
+}
+```
+
+### 示例 2：战斗行为
+如果输入里提供：
+- `available_attributes`: `[{"id": "fight", "name": "格斗"}]`
+- `valid_characters`: `[{"id": "char-player-0000", "name": "玩家"}, {"id": "char-guard-0001", "name": "守卫"}]`
+
+则输出应类似：
+```json
+{
+  "intent_info": {
+    "intent": "玩家攻击守卫",
+    "routing_hint": "against",
+    "attributes": ["fight"],
+    "against_char_id": ["char-player-0000", "char-guard-0001"],
     "difficulty": null,
     "dm_reply": null
   }

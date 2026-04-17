@@ -91,6 +91,62 @@ class FakeLLMService:
         raise AssertionError(f"unsupported output model: {output_model}")
 
 
+class RetryAwareFakeLLMService:
+    def __init__(self) -> None:
+        self.config = ConfigLoader.load()
+        self.dm_call_count = 0
+        self.last_dm_payload = None
+
+    def call_llm_json(
+        self,
+        *,
+        agent_name,
+        system_prompt,
+        user_payload,
+        output_model,
+        retry_budget,
+        validation_feedback=None,
+    ) -> BaseModel:
+        if output_model is DmAgentLlmOutput:
+            self.dm_call_count += 1
+            self.last_dm_payload = user_payload
+            if self.dm_call_count == 1:
+                return output_model.model_validate(
+                    {
+                        "intent_info": {
+                            "intent": "attack",
+                            "routing_hint": "against",
+                            "attributes": ["力量"],
+                            "against_char_id": ["char-player-0000", "char-guard-0001"],
+                            "difficulty": None,
+                            "dm_reply": None,
+                        }
+                    }
+                )
+            return output_model.model_validate(
+                {
+                    "intent_info": {
+                        "intent": "attack",
+                        "routing_hint": "against",
+                        "attributes": ["fight"],
+                        "against_char_id": ["char-player-0000", "char-guard-0001"],
+                        "difficulty": None,
+                        "dm_reply": None,
+                    }
+                }
+            )
+
+        if output_model is EvolutionAgentLlmOutput:
+            return output_model.model_validate(
+                {
+                    "summary": "玩家向守卫发起了攻击",
+                    "visible_to_player": True,
+                }
+            )
+
+        raise AssertionError(f"unsupported output model: {output_model}")
+
+
 class TestPhase2SerialPipeline(unittest.TestCase):
     def setUp(self) -> None:
         room = MapEntity(
@@ -183,6 +239,52 @@ class TestPhase2SerialPipeline(unittest.TestCase):
         self.assertEqual(result["reply"], "这里现在更适合直接由 DM 对你回复。")
         self.assertFalse(result["narrative_triggered"])
         self.assertNotIn("evolution", result)
+
+    def test_dm_memory_is_updated_and_respects_config(self):
+        self.engine.run_turn(
+            raw_input="我想和守卫聊聊",
+            actor_id="char-player-0000",
+            turn_id=5,
+            trace_id=1005,
+        )
+
+        self.assertEqual(self.engine._dm_memory.memory_turns, 5)
+        self.assertEqual(self.engine._dm_memory.current_event, "我想和守卫聊聊")
+        self.assertEqual(len(self.engine._dm_memory.dialogues), 2)
+        self.assertEqual(self.engine._dm_memory.dialogues[0].speaker, "char-player-0000")
+        self.assertEqual(self.engine._dm_memory.dialogues[0].content, "我想和守卫聊聊")
+        self.assertEqual(self.engine._dm_memory.dialogues[1].speaker, "dmagent")
+        self.assertEqual(self.engine._dm_memory.dialogues[1].content, "这里现在更适合直接由 DM 对你回复。")
+
+    def test_dm_memory_rollover_pushes_old_entries_to_log(self):
+        for index in range(1, 5):
+            self.engine.run_turn(
+                raw_input=f"第{index}次对话",
+                actor_id="char-player-0000",
+                turn_id=10 + index,
+                trace_id=2000 + index,
+            )
+
+        self.assertEqual(self.engine._dm_memory.memory_turns, 5)
+        self.assertEqual(len(self.engine._dm_memory.dialogues), 5)
+        self.assertGreaterEqual(len(self.engine._dm_memory.dialogue_log), 3)
+
+    def test_dm_input_contains_available_attribute_ids_and_valid_characters(self):
+        service = RetryAwareFakeLLMService()
+        engine = Engine(world_state=self.engine.world_state, mode="phase2", dm_max_retries=2, llm_service=service)
+        result = engine.run_turn(
+            raw_input="我攻击守卫",
+            actor_id="char-player-0000",
+            turn_id=20,
+            trace_id=2020,
+        )
+
+        self.assertEqual(result["route"], "serial_nl")
+        self.assertEqual(service.last_dm_payload["available_attributes"][0]["id"], "fight")
+        self.assertEqual(service.last_dm_payload["available_attributes"][0]["name"], "格斗")
+        self.assertIn("char-player-0000", [item["id"] for item in service.last_dm_payload["valid_characters"]])
+        self.assertIn("char-guard-0001", [item["id"] for item in service.last_dm_payload["valid_characters"]])
+        self.assertEqual(result["dm"]["intent_info"]["attributes"], ["fight"])
 
 
 if __name__ == "__main__":
