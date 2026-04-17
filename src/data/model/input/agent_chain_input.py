@@ -82,7 +82,7 @@ class E3RuleResult(BaseModel):
 	由 rule_system 产出的客观判断。
 	"""
 	intent: str = Field(default="",description="直接来自dm_agent解析出的意图")
-	success: Enum = Field(default="", description="成功,失败,还是大成功,大失败")
+	success: str = Field(default="", description="成功,失败,还是大成功,大失败")
 
 
 

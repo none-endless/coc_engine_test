@@ -3,28 +3,111 @@ title: EngineConfig
 type: object
 additionalProperties: false
 properties:
-  runtime:
+  llm:
     type: object
     additionalProperties: false
     properties:
-      turn_timeout:
+      api_key:
+        type: string
+        default: ""
+      model:
+        type: string
+        enum: [gpt-4, gpt-3.5-turbo, claude-3]
+        default: gpt-4
+      enable_reasoning:
+        type: boolean
+        default: false
+      temperature:
+        type: number
+        minimum: 0
+        maximum: 2
+        default: 0.7
+      max_tokens:
+        type: integer
+        minimum: 100
+        maximum: 8000
+        default: 2000
+      timeout:
         type: integer
         minimum: 1
         default: 30
-      log_level:
+      api_base:
         type: string
-        enum: [DEBUG, INFO, WARNING, ERROR]
-        default: INFO
-    required: [turn_timeout, log_level]
-  storage:
+        default: https://api.openai.com/v1
+    required: [api_key, model, enable_reasoning, temperature, max_tokens, timeout, api_base]
+  system:
     type: object
     additionalProperties: false
     properties:
-      memory_log_path:
+      max_retry_count:
+        type: integer
+        minimum: 1
+        maximum: 10
+        default: 3
+      retry_timeout_ms:
+        type: integer
+        minimum: 1000
+        maximum: 30000
+        default: 5000
+      fallback_error:
         type: string
-        default: data/memory.log
-      short_log_path:
-        type: string
-        default: data/shortLog.log
-    required: [memory_log_path, short_log_path]
-required: [runtime, storage]
+        default: 系统繁忙，请稍后重试
+      snapshot_interval:
+        type: integer
+        minimum: 1
+        default: 10
+    required: [max_retry_count, retry_timeout_ms, fallback_error, snapshot_interval]
+  agent:
+    type: object
+    additionalProperties: false
+    properties:
+      dm:
+        type: object
+        additionalProperties: false
+        properties:
+          memory_turns:
+            type: integer
+            minimum: 1
+            default: 5
+        required: [memory_turns]
+      npc:
+        type: object
+        additionalProperties: false
+        properties:
+          memory_turns:
+            type: integer
+            minimum: 1
+            default: 15
+          shortlog_turns:
+            type: integer
+            minimum: 1
+            default: 30
+          max_actions_per_turn:
+            type: integer
+            minimum: 1
+            default: 3
+          cooldown_turns:
+            type: integer
+            minimum: 0
+            default: 1
+        required: [memory_turns, shortlog_turns, max_actions_per_turn, cooldown_turns]
+      narrative:
+        type: object
+        additionalProperties: false
+        properties:
+          recent_turns:
+            type: integer
+            minimum: 1
+            default: 5
+        required: [recent_turns]
+    required: [dm, npc, narrative]
+  description:
+    type: object
+    additionalProperties: false
+    properties:
+      add_interval:
+        type: integer
+        minimum: 1
+        default: 10
+    required: [add_interval]
+required: [llm, system, agent, description]

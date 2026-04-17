@@ -1,0 +1,6 @@
+# 元命令执行耗时日志（\look）
+count: 100
+avg_ms: 0.042298
+p95_ms: 0.068565
+max_ms: 0.357700
+llm_call: false

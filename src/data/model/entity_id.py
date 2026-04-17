@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import DefaultDict, Dict, Set
 
 ENTITY_ID_PATTERN = re.compile(r"^(map|char|item)-[a-z][a-z0-9_]*-\d{4}$")
+PLAYER_ENTITY_ID = "char-player-0000"
 
 
 def validate_entity_id(entity_id: str) -> str:
@@ -64,18 +65,32 @@ class EntityIdGenerator:
         self._lock = threading.RLock()
         self._counters: DefaultDict[str, int] = defaultdict(int)
 
+    def generate_player_id(self) -> str:
+        with self._lock:
+            if self._registry.is_archived(PLAYER_ENTITY_ID):
+                raise ValueError("player id has been archived and cannot be reused")
+            if self._registry.is_registered(PLAYER_ENTITY_ID):
+                return PLAYER_ENTITY_ID
+            self._registry.register(PLAYER_ENTITY_ID)
+            return PLAYER_ENTITY_ID
+
     def generate(self, entity_type: str, name: str) -> str:
         if entity_type not in {"map", "char", "item"}:
             raise ValueError("entity_type must be map/char/item")
 
         normalized = _normalize_name(name)
+        if entity_type == "char" and normalized == "player":
+            return self.generate_player_id()
+
         key = f"{entity_type}-{normalized}"
 
         with self._lock:
+            if key not in self._counters:
+                self._counters[key] = 0
             while True:
-                self._counters[key] += 1
                 suffix = f"{self._counters[key]:04d}"
                 entity_id = f"{key}-{suffix}"
+                self._counters[key] += 1
                 if self._registry.is_archived(entity_id):
                     continue
                 if self._registry.is_registered(entity_id):

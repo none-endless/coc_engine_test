@@ -1,0 +1,162 @@
+{
+  "run_at": "2026-04-16T21:15:06.698450",
+  "config": {
+    "model": "qwen3.6-plus",
+    "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "enable_reasoning": false,
+    "max_tokens": 1024,
+    "timeout": 120
+  },
+  "cases": [
+    {
+      "case": 1,
+      "input": "我和守卫聊聊最近的情况",
+      "ok": true,
+      "result": {
+        "route": "serial_nl",
+        "turn_id": 1,
+        "trace_id": 9101,
+        "dm": {
+          "llm_output": {
+            "intent_info": {
+              "intent": "玩家希望与守卫进行对话，了解最近发生的情况",
+              "routing_hint": null,
+              "attributes": [],
+              "against_char_id": [],
+              "difficulty": null,
+              "dm_reply": null
+            }
+          },
+          "system_output": {
+            "e1_view": {
+              "raw_text": "我和守卫聊聊最近的情况",
+              "source_id": "char-player-0000"
+            }
+          }
+        },
+        "e3": {
+          "intent": "玩家希望与守卫进行对话，了解最近发生的情况",
+          "success": ""
+        },
+        "evolution": {
+          "summary": "trace=9101 | turn=1 | char-player-0000 与 char-guard-0001 进行了交谈，询问了最近的情况。",
+          "visible_to_player": true,
+          "turn_id": 1,
+          "trace_id": 9101,
+          "should_skip_narrative": false,
+          "e7": {
+            "narrative_list": []
+          },
+          "output": {
+            "llm_output": {
+              "summary": "trace=9101 | turn=1 | char-player-0000 与 char-guard-0001 进行了交谈，询问了最近的情况。",
+              "visible_to_player": true
+            },
+            "system_output": null
+          }
+        },
+        "narrative_triggered": true
+      }
+    },
+    {
+      "case": 2,
+      "input": "我调查桌上的文件",
+      "ok": true,
+      "result": {
+        "route": "serial_nl",
+        "turn_id": 2,
+        "trace_id": 9102,
+        "dm": {
+          "llm_output": {
+            "intent_info": {
+              "intent": "玩家想要调查桌上的文件以获取信息",
+              "routing_hint": null,
+              "attributes": [],
+              "against_char_id": [],
+              "difficulty": null,
+              "dm_reply": null
+            }
+          },
+          "system_output": {
+            "e1_view": {
+              "raw_text": "我调查桌上的文件",
+              "source_id": "char-player-0000"
+            }
+          }
+        },
+        "e3": {
+          "intent": "玩家想要调查桌上的文件以获取信息",
+          "success": ""
+        },
+        "evolution": {
+          "summary": "trace=9102 | turn=2 | char-player-0000 仔细检查了桌上的文件，试图从中寻找线索或重要信息。",
+          "visible_to_player": true,
+          "turn_id": 2,
+          "trace_id": 9102,
+          "should_skip_narrative": false,
+          "e7": {
+            "narrative_list": []
+          },
+          "output": {
+            "llm_output": {
+              "summary": "trace=9102 | turn=2 | char-player-0000 仔细检查了桌上的文件，试图从中寻找线索或重要信息。",
+              "visible_to_player": true
+            },
+            "system_output": null
+          }
+        },
+        "narrative_triggered": true
+      }
+    },
+    {
+      "case": 3,
+      "input": "我攻击守卫",
+      "ok": true,
+      "result": {
+        "route": "serial_nl",
+        "turn_id": 3,
+        "trace_id": 9103,
+        "dm": {
+          "llm_output": {
+            "intent_info": {
+              "intent": "blocked",
+              "routing_hint": null,
+              "attributes": [],
+              "against_char_id": [],
+              "difficulty": null,
+              "dm_reply": "你的输入包含无效属性或目标，请重试。"
+            }
+          },
+          "system_output": {
+            "e1_view": {
+              "raw_text": "我攻击守卫",
+              "source_id": "char-player-0000"
+            }
+          }
+        },
+        "e3": {
+          "intent": "blocked",
+          "success": ""
+        },
+        "evolution": {
+          "summary": "trace=9103 | turn=3 | char-player-0000 对 char-guard-0001 发起攻击，但未能命中或造成有效伤害",
+          "visible_to_player": true,
+          "turn_id": 3,
+          "trace_id": 9103,
+          "should_skip_narrative": false,
+          "e7": {
+            "narrative_list": []
+          },
+          "output": {
+            "llm_output": {
+              "summary": "trace=9103 | turn=3 | char-player-0000 对 char-guard-0001 发起攻击，但未能命中或造成有效伤害",
+              "visible_to_player": true
+            },
+            "system_output": null
+          }
+        },
+        "narrative_triggered": true
+      }
+    }
+  ]
+}

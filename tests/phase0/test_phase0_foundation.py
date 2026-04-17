@@ -18,23 +18,45 @@ class TestPhase0Foundation(unittest.TestCase):
         registry = EntityIdRegistry()
         generator = EntityIdGenerator(registry)
 
+        player_id = generator.generate_player_id()
         first = generator.generate("char", "Bedroom Guard")
         second = generator.generate("char", "Bedroom Guard")
 
+        self.assertEqual(player_id, "char-player-0000")
+        self.assertEqual(first, "char-bedroom_guard-0000")
+        self.assertEqual(second, "char-bedroom_guard-0001")
         self.assertRegex(first, r"^char-bedroom_guard-\d{4}$")
         self.assertRegex(second, r"^char-bedroom_guard-\d{4}$")
         self.assertNotEqual(first, second)
+        self.assertTrue(registry.is_registered(player_id))
         self.assertTrue(registry.is_registered(first))
         self.assertTrue(registry.is_registered(second))
 
     def test_config_precedence_cli_over_env_over_file_over_default(self):
         yaml_text = """
-runtime:
-  turn_timeout: 40
-  log_level: WARNING
-storage:
-  memory_log_path: custom/memory.log
-  short_log_path: custom/short.log
+llm:
+    model: gpt-4
+    temperature: 0.5
+    max_tokens: 1800
+    timeout: 25
+    api_base: https://api.openai.com/v1
+system:
+    max_retry_count: 4
+    retry_timeout_ms: 4500
+    fallback_error: custom fallback
+    snapshot_interval: 8
+agent:
+    dm:
+        memory_turns: 6
+    npc:
+        memory_turns: 16
+        shortlog_turns: 31
+        max_actions_per_turn: 4
+        cooldown_turns: 2
+    narrative:
+        recent_turns: 6
+description:
+    add_interval: 12
 """.strip()
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -42,23 +64,23 @@ storage:
             config_file.write_text(yaml_text, encoding="utf-8")
 
             env = dict(os.environ)
-            env["ER_RUNTIME__TURN_TIMEOUT"] = "50"
-            env["ER_RUNTIME__LOG_LEVEL"] = "ERROR"
+            env["ER_SYSTEM__MAX_RETRY_COUNT"] = "5"
+            env["ER_AGENT__NPC__MAX_ACTIONS_PER_TURN"] = "2"
 
             config = ConfigLoader.load(
                 config_path=str(config_file),
                 env=env,
-                cli_overrides={"runtime.turn_timeout": 60},
+                cli_overrides={"system.max_retry_count": 6},
             )
 
-            self.assertEqual(config.runtime.turn_timeout, 60)
-            self.assertEqual(config.runtime.log_level, "ERROR")
-            self.assertEqual(config.storage.memory_log_path, "custom/memory.log")
+            self.assertEqual(config.system.max_retry_count, 6)
+            self.assertEqual(config.agent.npc.max_actions_per_turn, 2)
+            self.assertEqual(config.description.add_interval, 12)
 
     def test_world_state_auto_index_and_tamper_safe(self):
         map_1 = MapEntity(id="map-bedroom-0001", name="Bedroom")
         map_2 = MapEntity(id="map-hall-0001", name="Hall")
-        char = CharacterEntity(id="char-player-0001", name="Player", location=map_1.id)
+        char = CharacterEntity(id="char-player-0000", name="Player", location=map_1.id)
 
         store = WorldEntityStore(
             maps={map_1.id: map_1, map_2.id: map_2},

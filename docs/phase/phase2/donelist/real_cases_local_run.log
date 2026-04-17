@@ -1,0 +1,38 @@
+# Phase2 本地真实三用例联调日志
+
+run_at: 2026-04-16T21:15:06.698450
+model: qwen3.6-plus
+api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+enable_reasoning: False
+max_tokens: 1024
+timeout: 120
+
+## case-1
+input: 我和守卫聊聊最近的情况
+ok: True
+route: serial_nl
+dm.intent: 玩家希望与守卫进行对话，了解最近发生的情况
+dm.routing_hint: None
+narrative_triggered: True
+evolution.visible_to_player: True
+evolution.summary: trace=9101 | turn=1 | char-player-0000 与 char-guard-0001 进行了交谈，询问了最近的情况。
+
+## case-2
+input: 我调查桌上的文件
+ok: True
+route: serial_nl
+dm.intent: 玩家想要调查桌上的文件以获取信息
+dm.routing_hint: None
+narrative_triggered: True
+evolution.visible_to_player: True
+evolution.summary: trace=9102 | turn=2 | char-player-0000 仔细检查了桌上的文件，试图从中寻找线索或重要信息。
+
+## case-3
+input: 我攻击守卫
+ok: True
+route: serial_nl
+dm.intent: blocked
+dm.routing_hint: None
+narrative_triggered: True
+evolution.visible_to_player: True
+evolution.summary: trace=9103 | turn=3 | char-player-0000 对 char-guard-0001 发起攻击，但未能命中或造成有效伤害

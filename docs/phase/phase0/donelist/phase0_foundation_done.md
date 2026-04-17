@@ -11,14 +11,16 @@
 - 新增配置加载器：
   - `src/config/loader.py`
 - 已实现配置优先级：`CLI > ENV > FILE > DEFAULT`
+- 配置结构已按规范对齐：`llm/system/agent/description`
 
 2. 数据模型与实体 ID 规范
 - 新增实体 ID 工具：
   - `src/data/model/entity_id.py`
 - 已实现能力：
   - ID 格式校验：`[map|char|item]-[name]-[0000]`
+  - 玩家固定 ID：`char-player-0000`
   - 全局 ID 注册表（已注册 / 已归档）
-  - 全局 ID 生成器（按类型与名称生成唯一后缀）
+  - 全局 ID 生成器（后缀从 `0000` 递增）
 
 3. 世界状态容器与快照
 - 新增世界状态单例：
@@ -27,12 +29,13 @@
   - `WorldState` 单例
   - `Character.location` / `Item.location` 变更后自动派生 `Map.char_index` / `Map.item_index`
   - 只读快照接口 `get_snapshot()`（返回副本，避免外部写入影响真实状态）
+  - 注册/重置时深拷贝入库，避免外部对象持有引用后污染内部状态
 
 4. 回合事务与日志基底
 - 新增基础事务与日志模型：
   - `src/data/model/infra.py`
 - 已实现能力：
-  - `TurnEnvelope(turn_id, trace_id)`
+  - `TurnEnvelope(raw_input, turn, trace_id, debug, world_version, event_id)`
   - `MemoryLogEvent` / `ShortLogEvent`
   - `EventLogger`（memory.log / shortLog 的内存日志基底）
 
@@ -40,6 +43,13 @@
 - 修复 Pydantic v2 下基础模型导入问题：
   - `src/data/model/base.py`
   - 变更：`@field_validator("id", check_fields=False)`
+
+6. 规范复核后的修正
+- 对照 `docs/spec/draft_spec.md` 完成以下对齐：
+  - 配置模板与 schema 对齐到规范字段
+  - 事务元数据字段补齐
+  - 玩家 ID 固定与后缀起始值修正
+  - WorldState 入库防篡改边界增强
 
 ## 验收需求对应结果
 

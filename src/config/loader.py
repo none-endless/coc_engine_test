@@ -8,19 +8,53 @@ from typing import Any, Dict, Mapping, Optional
 from pydantic import BaseModel, Field
 
 
-class RuntimeConfig(BaseModel):
-    turn_timeout: int = Field(default=30)
-    log_level: str = Field(default="INFO")
+class LlmConfig(BaseModel):
+    api_key: str = Field(default="")
+    model: str = Field(default="gpt-4")
+    enable_reasoning: bool = Field(default=False)
+    temperature: float = Field(default=0.7)
+    max_tokens: int = Field(default=2000)
+    timeout: int = Field(default=30)
+    api_base: str = Field(default="https://api.openai.com/v1")
 
 
-class StorageConfig(BaseModel):
-    memory_log_path: str = Field(default="data/memory.log")
-    short_log_path: str = Field(default="data/shortLog.log")
+class SystemConfig(BaseModel):
+    max_retry_count: int = Field(default=3)
+    retry_timeout_ms: int = Field(default=5000)
+    fallback_error: str = Field(default="系统繁忙，请稍后重试")
+    snapshot_interval: int = Field(default=10)
+
+
+class AgentDmConfig(BaseModel):
+    memory_turns: int = Field(default=5)
+
+
+class AgentNpcConfig(BaseModel):
+    memory_turns: int = Field(default=15)
+    shortlog_turns: int = Field(default=30)
+    max_actions_per_turn: int = Field(default=3)
+    cooldown_turns: int = Field(default=1)
+
+
+class AgentNarrativeConfig(BaseModel):
+    recent_turns: int = Field(default=5)
+
+
+class AgentConfig(BaseModel):
+    dm: AgentDmConfig = Field(default_factory=AgentDmConfig)
+    npc: AgentNpcConfig = Field(default_factory=AgentNpcConfig)
+    narrative: AgentNarrativeConfig = Field(default_factory=AgentNarrativeConfig)
+
+
+class DescriptionConfig(BaseModel):
+    add_interval: int = Field(default=10)
 
 
 class EngineConfig(BaseModel):
-    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
-    storage: StorageConfig = Field(default_factory=StorageConfig)
+    llm: LlmConfig = Field(default_factory=LlmConfig)
+    system: SystemConfig = Field(default_factory=SystemConfig)
+    agent: AgentConfig = Field(default_factory=AgentConfig)
+    description: DescriptionConfig = Field(default_factory=DescriptionConfig)
 
 
 class ConfigLoader:
@@ -77,7 +111,7 @@ class ConfigLoader:
         for key, value in env.items():
             if not key.startswith(cls.ENV_PREFIX):
                 continue
-            # ER_RUNTIME__TURN_TIMEOUT -> runtime.turn_timeout
+            # ER_SYSTEM__MAX_RETRY_COUNT -> system.max_retry_count
             path = key[len(cls.ENV_PREFIX):].lower().replace("__", ".")
             cls._set_dotted_key(result, path, cls._coerce_value(value))
         return result

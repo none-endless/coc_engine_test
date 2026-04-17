@@ -1,0 +1,15 @@
+# 非鉴定意图与鉴定意图分流日志样例
+
+[non_check]
+route=serial_nl
+intent=roleplay
+routing_hint=None
+summary=turn=11 | trace=2001 | intent=roleplay | check=none
+
+[check]
+route=serial_nl
+intent=combat_attempt
+routing_hint=against
+participants=['char-player-0000', 'char-guard-0001']
+e3_success=成功
+summary=turn=12 | trace=2002 | intent=combat_attempt | check=成功(roll=27/target=60)
