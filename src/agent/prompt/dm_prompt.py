@@ -40,7 +40,7 @@ DM_SYSTEM_PROMPT = """
     "difficulty": null | "简单" | "普通" | "困难",
                                    // 鉴定难度（仅供 ruleSystem 参考）
     "dm_reply": null | "string"  // 当 routing_hint 为 null 时，
-                                   // 可以提供对话回复引导玩家；不需要回复时为 null
+                                   // 可以提供 DM 直接回复；若填入非空回复，系统将直接向玩家返回并终止后续链路
   }
 }
 ```

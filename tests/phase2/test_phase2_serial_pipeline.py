@@ -67,7 +67,7 @@ class FakeLLMService:
                         "attributes": [],
                         "against_char_id": [],
                         "difficulty": None,
-                        "dm_reply": None,
+                        "dm_reply": "这里现在更适合直接由 DM 对你回复。",
                     }
                 }
             return output_model.model_validate(payload)
@@ -170,6 +170,19 @@ class TestPhase2SerialPipeline(unittest.TestCase):
         self.assertTrue(evolution["should_skip_narrative"])
         self.assertFalse(result["narrative_triggered"])
         self.assertGreaterEqual(len(evolution["e7"]["narrative_list"]), 1)
+
+    def test_dm_reply_short_circuits_serial_pipeline(self):
+        result = self.engine.run_turn(
+            raw_input="我想和守卫聊聊",
+            actor_id="char-player-0000",
+            turn_id=4,
+            trace_id=1004,
+        )
+
+        self.assertEqual(result["route"], "dm_direct_reply")
+        self.assertEqual(result["reply"], "这里现在更适合直接由 DM 对你回复。")
+        self.assertFalse(result["narrative_triggered"])
+        self.assertNotIn("evolution", result)
 
 
 if __name__ == "__main__":

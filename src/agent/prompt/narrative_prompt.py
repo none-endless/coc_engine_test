@@ -45,14 +45,7 @@ NARRATIVE_SYSTEM_PROMPT = """
 ```json
 {
   "narrative_str": "string",
-  "narrative_draft": {
-    "draft_id": "draft-时间戳-随机",
-    "trace_id": 0,
-    "turn_id": 0,
-    "content": "string",
-    "visible_to_player": true,
-    "status": "draft"
-  }
+  "narrative_draft": null
 }
 ```
 
@@ -60,12 +53,9 @@ NARRATIVE_SYSTEM_PROMPT = """
 
 - `narrative_str`：纯叙事文本字符串，用于流式输出
 - `narrative_draft`：结构化叙事草稿
-  - `draft_id`：草稿唯一标识
-  - `trace_id`：链路追踪 ID（系统自动填充）
-  - `turn_id`：回合号（系统自动填充）
-  - `content`：草稿内容，与 narrative_str 相同
-  - `visible_to_player`：是否可见（系统自动设置）
-  - `status`：草稿状态，固定为 "draft"
+  - 推荐直接输出 `null`
+  - `draft_id` / `trace_id` / `turn_id` / `visible_to_player` / `status` 都由系统负责填充或覆盖
+  - 如果你确实输出了 `narrative_draft`，只需要保证内容与 `narrative_str` 一致，不要试图管理系统字段
 
 ## 叙事内容生成指南
 
@@ -102,14 +92,7 @@ NARRATIVE_SYSTEM_PROMPT = """
 ```json
 {
   "narrative_str": "角色挥剑斩向强盗，剑锋准确地命中了目标。强盗惨叫一声，踉跄后退数步。\"可恶！\"他愤怒地吼道，\"你将为这一切付出代价！\"他的眼中燃烧着复仇的火焰。",
-  "narrative_draft": {
-    "draft_id": "draft-001-abc123",
-    "trace_id": 0,
-    "turn_id": 0,
-    "content": "角色挥剑斩向强盗...",
-    "visible_to_player": true,
-    "status": "draft"
-  }
+  "narrative_draft": null
 }
 ```
 
@@ -117,14 +100,7 @@ NARRATIVE_SYSTEM_PROMPT = """
 ```json
 {
   "narrative_str": "酒吧老板警觉地看着你，手指在吧台下轻轻敲击。\"你问地下室？\"他的声音压低了几分，\"那里没什么好看的，我劝你还是别去招惹那些麻烦。\"他的目光飘向角落，似乎在警惕着什么。",
-  "narrative_draft": {
-    "draft_id": "draft-002-def456",
-    "trace_id": 0,
-    "turn_id": 0,
-    "content": "酒吧老板警觉地看着你...",
-    "visible_to_player": true,
-    "status": "draft"
-  }
+  "narrative_draft": null
 }
 ```
 
@@ -132,14 +108,7 @@ NARRATIVE_SYSTEM_PROMPT = """
 ```json
 {
   "narrative_str": "推开酒馆的大门，一阵冷风迎面扑来。街道上笼罩着薄薄的雾气，远处的钟楼传来沉闷的报时声。路灯在风中摇曳，投下忽明忽暗的光影。",
-  "narrative_draft": {
-    "draft_id": "draft-003-ghi789",
-    "trace_id": 0,
-    "turn_id": 0,
-    "content": "推开酒馆的大门...",
-    "visible_to_player": true,
-    "status": "draft"
-  }
+  "narrative_draft": null
 }
 ```
 """.strip()

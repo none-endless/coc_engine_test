@@ -19,6 +19,8 @@
 : 对抗鉴定 routing_hint="against"
 : 数值鉴定 routing_hint="num"
 - 非鉴定对话可 routing_hint=null。
+- 若 routing_hint=null 且 dm_reply 非空，系统将直接向玩家返回回复并终止本回合后续链路。
+- 只有 routing_hint=null 且 dm_reply 为空时，输入才继续提交给 EvolutionAgent。
 
 4. 严格约束：
 - against_char_id 里的每个 ID 必须真实存在。

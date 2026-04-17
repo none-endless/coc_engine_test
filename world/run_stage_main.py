@@ -284,6 +284,9 @@ def print_turn_summary(engine: Engine, result: Dict[str, Any], actor_id: str) ->
         print(f"meta command: {payload.get('command')}")
         print(payload.get("result", ""))
         return
+    if result.get("route") == "dm_direct_reply":
+        print(f"dm.reply: {result.get('reply', '')}")
+        return
 
     dm = result.get("dm", {}).get("intent_info", {})
     e3 = result.get("e3", {})

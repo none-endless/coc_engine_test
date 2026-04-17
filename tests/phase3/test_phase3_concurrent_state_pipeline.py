@@ -18,6 +18,7 @@ from src.data.model.base import (
     Attribute,
     CharacterEntity,
     Description,
+    DescriptionAddItem,
     ExtensionSchemaItem,
     ExtensionSchemaRegistry,
     MapConnection,
@@ -308,6 +309,86 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
         self.assertEqual(before["maps"], after["maps"])
         self.assertEqual(before["characters"], after["characters"])
         self.assertEqual(before["items"], after["items"])
+
+    def test_description_add_string_is_coerced_by_system(self):
+        runtime = StatePatchRuntime(world_state=self.world)
+        expected_version = int(self.world.get_snapshot()["version"])
+        patch = StateAgentOutput.model_validate(
+            {
+                "llm_output": {
+                    "changes": [
+                        {
+                            "op": "ADD",
+                            "target_path": "char-player-0000.description.add",
+                            "value": ["你听见门外传来细碎脚步声。"],
+                        }
+                    ]
+                },
+                "system_output": {
+                    "patch_meta": {
+                        "trace_id": 9,
+                        "turn_id": 12,
+                        "retry_seq": 0,
+                        "patch_id": "p9",
+                        "expected_version": expected_version,
+                    }
+                },
+            }
+        )
+
+        runtime.apply_patch(patch_output=patch)
+        updated = self.world.get_character("char-player-0000")
+        self.assertEqual(
+            updated.description.add[0],
+            DescriptionAddItem(turn=12, content="你听见门外传来细碎脚步声。"),
+        )
+
+    def test_dm_reply_short_circuits_concurrent_pipeline(self):
+        class DirectReplyLLMService(FakeLLMService):
+            def call_llm_json(
+                self,
+                *,
+                agent_name: str,
+                system_prompt: str,
+                user_payload: Dict[str, Any],
+                output_model: Type[BaseModel],
+                retry_budget: int,
+                validation_feedback: Any = None,
+            ) -> BaseModel:
+                if output_model is DmAgentLlmOutput:
+                    return output_model.model_validate(
+                        {
+                            "intent_info": {
+                                "intent": "talk",
+                                "routing_hint": None,
+                                "attributes": [],
+                                "against_char_id": [],
+                                "difficulty": None,
+                                "dm_reply": "守卫皱了皱眉，示意你先别靠近。",
+                            }
+                        }
+                    )
+                return super().call_llm_json(
+                    agent_name=agent_name,
+                    system_prompt=system_prompt,
+                    user_payload=user_payload,
+                    output_model=output_model,
+                    retry_budget=retry_budget,
+                    validation_feedback=validation_feedback,
+                )
+
+        engine = Engine(world_state=self.world, mode="phase3", llm_service=DirectReplyLLMService())
+        result = engine.run_turn(
+            raw_input="我和守卫搭话",
+            actor_id="char-player-0000",
+            turn_id=9,
+            trace_id=9001,
+        )
+
+        self.assertEqual(result["route"], "dm_direct_reply")
+        self.assertEqual(result["reply"], "守卫皱了皱眉，示意你先别靠近。")
+        self.assertFalse(result["narrative_triggered"])
+        self.assertNotIn("state", result)
 
 
 if __name__ == "__main__":

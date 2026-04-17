@@ -4,7 +4,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from src.data.model.base import WorldEntityStore
+from src.data.model.base import DescriptionAddItem, WorldEntityStore
 from src.data.model.world_state import WorldState
 from src.data.model.agent_output import StateAgentOutput, StateChangeOp, StateOperator
 from src.rule.dsl import DslError
@@ -68,7 +68,12 @@ class StatePatchRuntime:
         for op in ordered:
             if op.op == StateOperator.ASSERT:
                 continue
-            self._apply_single_op(op=op, snapshot=working, extension_registry=extension_registry)
+            self._apply_single_op(
+                op=op,
+                snapshot=working,
+                extension_registry=extension_registry,
+                turn_id=patch_meta.turn_id,
+            )
             non_assert_count += 1
 
         store = self.world_state.get_store_copy()
@@ -129,7 +134,7 @@ class StatePatchRuntime:
             + buckets[StateOperator.REMOVE]
         )
 
-    def _apply_single_op(self, op: StateChangeOp, snapshot: Dict[str, Any], extension_registry) -> None:
+    def _apply_single_op(self, op: StateChangeOp, snapshot: Dict[str, Any], extension_registry, turn_id: int) -> None:
         if not op.target_path:
             raise StatePatchError(ERROR_FIELD_NOT_FOUND, "target_path is required")
 
@@ -170,8 +175,9 @@ class StatePatchRuntime:
                 raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "list operation targets non-list field")
             if not isinstance(op.value, list):
                 raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "ADD/REMOVE value must be list")
+            entries = self._normalize_list_entries(path_suffix=suffix, raw_entries=op.value, turn_id=turn_id)
             if op.op == StateOperator.ADD:
-                for entry in op.value:
+                for entry in entries:
                     if entry in current:
                         raise StatePatchError(
                             ERROR_DUPLICATE_ENTRY,
@@ -180,17 +186,56 @@ class StatePatchRuntime:
                         )
                     current.append(entry)
             else:
-                for entry in op.value:
-                    if entry not in current:
+                for entry in entries:
+                    remove_index = self._find_list_entry_index(path_suffix=suffix, current=current, entry=entry)
+                    if remove_index is None:
                         raise StatePatchError(
                             ERROR_ENTRY_NOT_FOUND,
                             "REMOVE target not found",
                             details={"target_path": op.target_path, "entry": entry},
                         )
-                    current.remove(entry)
+                    current.pop(remove_index)
             return
 
         raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, f"unsupported op: {op.op}")
+
+    @staticmethod
+    def _normalize_list_entries(path_suffix: str, raw_entries: List[Any], turn_id: int) -> List[Any]:
+        """对 description.add 兼容简化字符串输出，其它列表保持原样。"""
+        if path_suffix != "description.add":
+            return raw_entries
+
+        normalized: List[Dict[str, Any]] = []
+        for entry in raw_entries:
+            if isinstance(entry, str):
+                normalized.append(DescriptionAddItem(turn=turn_id, content=entry).model_dump(mode="json"))
+                continue
+            if isinstance(entry, dict):
+                payload = dict(entry)
+                if "content" not in payload:
+                    raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "description.add entry requires content")
+                payload.setdefault("turn", turn_id)
+                normalized.append(DescriptionAddItem.model_validate(payload).model_dump(mode="json"))
+                continue
+            raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "description.add entries must be string or object")
+        return normalized
+
+    @staticmethod
+    def _find_list_entry_index(path_suffix: str, current: List[Any], entry: Any) -> Optional[int]:
+        """description.add 允许按 content 匹配 REMOVE，其它列表仍按完整值匹配。"""
+        if path_suffix != "description.add":
+            try:
+                return current.index(entry)
+            except ValueError:
+                return None
+
+        entry_content = entry.get("content") if isinstance(entry, dict) else None
+        for index, current_entry in enumerate(current):
+            if current_entry == entry:
+                return index
+            if isinstance(current_entry, dict) and current_entry.get("content") == entry_content:
+                return index
+        return None
 
     @staticmethod
     def _split_target_path(path: str) -> Tuple[str, str]:

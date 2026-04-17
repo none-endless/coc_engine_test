@@ -40,7 +40,12 @@ STATE_CHANGE_SYSTEM_PROMPT = """
   "value": ["值1", "值2"]
 }
 ```
-适用于：列表类型字段，如 `description.add`
+适用于：列表类型字段。
+
+对 `description.add` 有特殊兼容规则：
+- 你可以直接输出字符串数组，如 `["门后传来轻微脚步声"]`
+- 系统会自动补全为 `{"turn": 当前回合, "content": "..."}` 的结构化对象
+- 若你已经输出了完整对象，系统也会接受
 
 ### 2. REMOVE - 从列表移除
 ```json
@@ -144,6 +149,7 @@ STATE_CHANGE_SYSTEM_PROMPT = """
 5. **列表操作**：
    - `ADD` 不能添加已存在的元素（`DUPLICATE_ENTRY`）
    - `REMOVE` 不能移除不存在的元素（`ENTRY_NOT_FOUND`）
+   - `description.add` 支持字符串简写或 `{content, turn?}` 对象；`turn` 未提供时由系统补全
 
 ## 错误处理
 

@@ -366,6 +366,17 @@ class Engine:
         routed = prepared["routed"]
         if routed.route == "rule_system_meta":
             return self._handle_meta_route(routed=routed, turn_id=turn_id, trace_id=trace_id)
+        dm_result = DmAnalyzeResult.model_validate(routed.payload)
+        direct_event = self._build_dm_direct_reply_event(dm_result=dm_result, turn_id=turn_id, trace_id=trace_id)
+        if direct_event is not None:
+            self._routing_logs.append(direct_event)
+            self._record_io(
+                kind="turn_result",
+                agent_name="engine",
+                input_data={"route": "phase2_dm_direct_reply", "turn_id": turn_id, "trace_id": trace_id, "actor_id": actor_id},
+                output_data=direct_event,
+            )
+            return direct_event
 
         context = self._build_nl_context(
             routed=routed,
@@ -412,6 +423,17 @@ class Engine:
         routed = prepared["routed"]
         if routed.route == "rule_system_meta":
             return self._handle_meta_route(routed=routed, turn_id=turn_id, trace_id=trace_id)
+        dm_result = DmAnalyzeResult.model_validate(routed.payload)
+        direct_event = self._build_dm_direct_reply_event(dm_result=dm_result, turn_id=turn_id, trace_id=trace_id)
+        if direct_event is not None:
+            self._routing_logs.append(direct_event)
+            self._record_io(
+                kind="turn_result",
+                agent_name="engine",
+                input_data={"route": "phase3_dm_direct_reply", "turn_id": turn_id, "trace_id": trace_id, "actor_id": actor_id},
+                output_data=direct_event,
+            )
+            return direct_event
 
         context = self._build_nl_context(
             routed=routed,
@@ -470,35 +492,47 @@ class Engine:
             ),
         )
 
-        narrative_input = NarrativeAgentInput(
-            identity=AgentIdentity(id="narrative", skill="generate narrative draft"),
-            llm_input=NarrativeAgentLlmInput(
-                e4=e4,
-                world_info=context["views"].narrative_view,
-                narrative_info=self._narrative_info,
-            ),
-            system_input=NarrativeAgentSystemInput(
-                chain_raw=NarrativeAgentChainInput(e4=e4_chain),
-                execution=SystemExecutionMeta(
-                    turn_id=turn_id,
-                    trace_id=trace_id,
-                    world_version=prepared["world_version"],
-                    event_id=routed.envelope.event_id,
-                    debug={"branch": "narrative"},
-                ),
-            ),
-        )
-
         branch_logs: List[Dict[str, Any]] = []
         scheduler_task = asyncio.create_task(self._run_scheduler_branch(scheduler_input, branch_logs))
         state_task = asyncio.create_task(self._run_state_branch(state_input, checkpoint, branch_logs))
-        narrative_task = asyncio.create_task(self._run_narrative_branch(narrative_input, branch_logs))
-        scheduler_out, state_out, narrative_out = await asyncio.gather(scheduler_task, state_task, narrative_task)
+        narrative_out: Optional[NarrativeAgentOutput] = None
+        if evolution_result.visible_to_player:
+            narrative_input = NarrativeAgentInput(
+                identity=AgentIdentity(id="narrative", skill="generate narrative draft"),
+                llm_input=NarrativeAgentLlmInput(
+                    e4=e4,
+                    world_info=context["views"].narrative_view,
+                    narrative_info=self._narrative_info,
+                ),
+                system_input=NarrativeAgentSystemInput(
+                    chain_raw=NarrativeAgentChainInput(e4=e4_chain),
+                    execution=SystemExecutionMeta(
+                        turn_id=turn_id,
+                        trace_id=trace_id,
+                        world_version=prepared["world_version"],
+                        event_id=routed.envelope.event_id,
+                        debug={"branch": "narrative"},
+                    ),
+                ),
+            )
+            narrative_task = asyncio.create_task(self._run_narrative_branch(narrative_input, branch_logs))
+            scheduler_out, state_out, narrative_out = await asyncio.gather(scheduler_task, state_task, narrative_task)
+        else:
+            scheduler_out, state_out = await asyncio.gather(scheduler_task, state_task)
 
         fallback_error = state_out.get("fallback_error")
-        narrative_payload = narrative_out.model_dump(mode="json")
+        if narrative_out is None:
+            narrative_payload = {
+                "llm_output": {
+                    "narrative_str": "",
+                    "narrative_draft": None,
+                },
+                "system_output": {},
+            }
+        else:
+            narrative_payload = narrative_out.model_dump(mode="json")
         if fallback_error is not None:
-            if narrative_out.llm_output.narrative_draft is not None:
+            if narrative_out is not None and narrative_out.llm_output.narrative_draft is not None:
                 narrative_payload["llm_output"]["narrative_draft"]["status"] = "discarded"
             narrative_payload = {
                 "llm_output": {
@@ -531,6 +565,28 @@ class Engine:
             output_data=event,
         )
         return event
+
+    def _build_dm_direct_reply_event(
+        self,
+        *,
+        dm_result: DmAnalyzeResult,
+        turn_id: int,
+        trace_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        intent_info = dm_result.intent_info
+        if intent_info.routing_hint is not None:
+            return None
+        if not intent_info.dm_reply:
+            return None
+        return {
+            "route": "dm_direct_reply",
+            "turn_id": turn_id,
+            "trace_id": trace_id,
+            "dm": self._serialize_dm_result(dm_result),
+            "reply": intent_info.dm_reply,
+            "narrative_triggered": False,
+            "terminated": False,
+        }
 
     def _run_check(self, actor_id: str, dm_result: DmAnalyzeResult) -> CocCheckResult:
         actor = self.world_state.get_character(actor_id)
