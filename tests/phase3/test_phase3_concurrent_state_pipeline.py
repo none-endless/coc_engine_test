@@ -8,6 +8,7 @@ from src.config.loader import ConfigLoader
 from src.data.model.agent_output import (
     DmAgentLlmOutput,
     EvolutionAgentLlmOutput,
+    MergerAgentLlmOutput,
     NarrativeAgentLlmOutput,
     NpcSchedulerAgentLlmOutput,
     PatchMeta,
@@ -77,7 +78,7 @@ class FakeLLMService:
             return output_model.model_validate(
                 {
                     "step_result": {
-                        "summary": "无 NPC 激活",
+                        "summary": "本回合无 NPC 激活",
                         "extra_npc_context": {},
                     }
                 }
@@ -86,8 +87,15 @@ class FakeLLMService:
         if output_model is NarrativeAgentLlmOutput:
             return output_model.model_validate(
                 {
-                    "narrative_str": "你迈步离开房间，走廊的冷风迎面而来。",
+                    "narrative_str": "你推门离开房间，走廊里的冷风迎面扑来。",
                     "narrative_draft": None,
+                }
+            )
+
+        if output_model is MergerAgentLlmOutput:
+            return output_model.model_validate(
+                {
+                    "narrative_str": "你离开房间，走入了走廊。",
                 }
             )
 
@@ -172,9 +180,13 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
         self.assertEqual(result["npcscheduler"]["system_output"]["turn_id"], 7)
         self.assertEqual(result["narrative"]["system_output"]["turn_id"], 7)
         self.assertEqual(result["state"]["patch"]["system_output"]["patch_meta"]["turn_id"], 7)
+        self.assertEqual(result["merger"]["system_output"]["turn_id"], 7)
 
         branches = {x["branch"] for x in result["parallel_timeline"]}
-        self.assertEqual(branches, {"npc_scheduler", "state", "narrative"})
+        self.assertEqual(branches, {"npc_scheduler", "state", "narrative", "merger"})
+        self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "你离开房间，走入了走廊。")
+        self.assertEqual(result["narrative"]["llm_output"]["narrative_draft"]["status"], "committed")
+        self.assertTrue(result["narrative"]["stream_events"])
 
     def test_set_description_public_and_char_index_are_blocked(self):
         runtime = StatePatchRuntime(world_state=self.world)
@@ -305,6 +317,7 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
         self.assertTrue(result["terminated"])
         self.assertFalse(result["narrative_triggered"])
         self.assertIsNone(result["narrative"]["llm_output"]["narrative_draft"])
+        self.assertIsNone(result["merger"])
         self.assertEqual(before["version"], after["version"])
         self.assertEqual(before["maps"], after["maps"])
         self.assertEqual(before["characters"], after["characters"])
@@ -389,6 +402,48 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
         self.assertEqual(result["reply"], "守卫皱了皱眉，示意你先别靠近。")
         self.assertFalse(result["narrative_triggered"])
         self.assertNotIn("state", result)
+
+    def test_narrative_recent_is_capped_and_state_branch_cannot_read_drafts(self):
+        class CaptureLLMService(FakeLLMService):
+            def __init__(self) -> None:
+                super().__init__()
+                self.payloads: Dict[str, Dict[str, Any]] = {}
+
+            def call_llm_json(
+                self,
+                *,
+                agent_name: str,
+                system_prompt: str,
+                user_payload: Dict[str, Any],
+                output_model: Type[BaseModel],
+                retry_budget: int,
+                validation_feedback: Any = None,
+            ) -> BaseModel:
+                self.payloads[agent_name] = user_payload
+                return super().call_llm_json(
+                    agent_name=agent_name,
+                    system_prompt=system_prompt,
+                    user_payload=user_payload,
+                    output_model=output_model,
+                    retry_budget=retry_budget,
+                    validation_feedback=validation_feedback,
+                )
+
+        service = CaptureLLMService()
+        engine = Engine(world_state=self.world, mode="phase3", llm_service=service)
+
+        for turn_id in range(1, 7):
+            engine.run_turn(
+                raw_input="我走向走廊",
+                actor_id="char-player-0000",
+                turn_id=turn_id,
+                trace_id=1000 + turn_id,
+            )
+
+        self.assertNotIn("narrative_info", service.payloads["state"])
+        self.assertIn("narrative_draft", service.payloads["merger"])
+        self.assertEqual(len(engine._narrative_info.recent), 5)
+        self.assertGreaterEqual(len(engine._narrative_info.narrative_log), 2)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from src.data.model.agent_output import (
 	NarrativeDraft,
 	NarrativeDraftStatus,
 )
+from src.data.model.narrative import NarrativeStreamEvent
 
 
 class NarrativeAgent:
@@ -49,3 +50,29 @@ class NarrativeAgent:
 			llm_output=llm_output,
 			system_output=NarrativeAgentSystemOutput(trace_id=execution.trace_id, turn_id=execution.turn_id),
 		)
+
+	@staticmethod
+	def build_stream_events(output: NarrativeAgentOutput) -> list[dict]:
+		"""将叙事文本切成前端可消费的流式事件。"""
+		text = output.llm_output.narrative_str.strip()
+		if not text:
+			return []
+
+		chunks = [segment for segment in text.replace("。", "。|").split("|") if segment]
+		events = [
+			NarrativeStreamEvent(
+				event="narrative.delta",
+				data={"index": index, "content": chunk},
+			).model_dump(mode="json")
+			for index, chunk in enumerate(chunks)
+		]
+		events.append(
+			NarrativeStreamEvent(
+				event="narrative.completed",
+				data={
+					"draft_id": output.llm_output.narrative_draft.draft_id if output.llm_output.narrative_draft else "",
+					"content": text,
+				},
+			).model_dump(mode="json")
+		)
+		return events
