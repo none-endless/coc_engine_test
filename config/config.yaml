@@ -19,6 +19,7 @@ agent:
   npc:
     memory_turns: 15
     shortlog_turns: 30
+    shortlog_merge_threshold: 5
     max_actions_per_turn: 3
     cooldown_turns: 0
   narrative:
@@ -32,3 +33,4 @@ storage:
 
 description:
   add_interval: 10
+  merge_threshold: 3

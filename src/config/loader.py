@@ -32,6 +32,7 @@ class AgentDmConfig(BaseModel):
 class AgentNpcConfig(BaseModel):
     memory_turns: int = Field(default=15)
     shortlog_turns: int = Field(default=30)
+    shortlog_merge_threshold: int = Field(default=5)
     max_actions_per_turn: int = Field(default=3)
     cooldown_turns: int = Field(default=1)
 
@@ -67,6 +68,7 @@ class AgentConfig(BaseModel):
 
 class DescriptionConfig(BaseModel):
     add_interval: int = Field(default=10)
+    merge_threshold: int = Field(default=3)
 
 
 class EngineConfig(BaseModel):

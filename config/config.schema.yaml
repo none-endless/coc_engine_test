@@ -82,6 +82,10 @@ properties:
             type: integer
             minimum: 1
             default: 30
+          shortlog_merge_threshold:
+            type: integer
+            minimum: 1
+            default: 5
           max_actions_per_turn:
             type: integer
             minimum: 1
@@ -90,7 +94,7 @@ properties:
             type: integer
             minimum: 0
             default: 1
-        required: [memory_turns, shortlog_turns, max_actions_per_turn, cooldown_turns]
+        required: [memory_turns, shortlog_turns, shortlog_merge_threshold, max_actions_per_turn, cooldown_turns]
       narrative:
         type: object
         additionalProperties: false
@@ -109,5 +113,9 @@ properties:
         type: integer
         minimum: 1
         default: 10
-    required: [add_interval]
+      merge_threshold:
+        type: integer
+        minimum: 1
+        default: 3
+    required: [add_interval, merge_threshold]
 required: [llm, system, agent, description]

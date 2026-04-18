@@ -233,12 +233,36 @@ class Engine:
         )
         self._recent_change_logs = self._recent_change_logs[-self._npc_shortlog_turn_limit :]
 
-    def _build_consistency_input(self, *, turn_id: int, trace_id: int) -> ConsistencyAgentInput:
-        """构建一致性代理输入，统一收口世界快照、叙事真值与最近变更日志。"""
+    def _build_consistency_input(self, *, turn_id: int, trace_id: int) -> Optional[ConsistencyAgentInput]:
+        """??????????????????? description?key_facts ? narrative recent?"""
+        snapshot = self.world_state.get_snapshot()
+        description_threshold = int(self.config.description.merge_threshold)
+        shortlog_threshold = int(self.config.agent.npc.shortlog_merge_threshold)
+
+        filtered_snapshot = {"version": snapshot.get("version"), "maps": {}, "characters": {}, "items": {}}
+        has_description_candidate = False
+        for bucket in ("maps", "characters", "items"):
+            for entity_id, payload in snapshot.get(bucket, {}).items():
+                add_items = payload.get("description", {}).get("add", [])
+                if len(add_items) > description_threshold:
+                    filtered_snapshot[bucket][entity_id] = payload
+                    has_description_candidate = True
+
+        has_shortlog_candidate = False
+        for char_id, payload in snapshot.get("characters", {}).items():
+            short_log = payload.get("memory", {}).get("short_log", [])
+            if len(short_log) > shortlog_threshold:
+                filtered_snapshot["characters"][char_id] = payload
+                has_shortlog_candidate = True
+
+        has_narrative_candidate = len(self._narrative_info.recent) > 1
+        if not has_description_candidate and not has_shortlog_candidate and not has_narrative_candidate:
+            return None
+
         return ConsistencyAgentInput(
-            identity=AgentIdentity(id="consistency", skill="repair world and narrative consistency"),
+            identity=AgentIdentity(id="consistency", skill="maintain description public, key facts and narrative recent"),
             llm_input=ConsistencyAgentLlmInput(
-                world_snapshot=self.world_state.get_snapshot(),
+                world_snapshot=filtered_snapshot,
                 narrative_info=self._narrative_info.model_copy(deep=True),
                 recent_change_logs=[item.model_copy(deep=True) for item in self._recent_change_logs],
             ),
@@ -247,35 +271,39 @@ class Engine:
                     turn_id=turn_id,
                     trace_id=trace_id,
                     world_version=self.world_state.get_version(),
-                    debug={"branch": "consistency"},
+                    debug={
+                        "branch": "consistency",
+                        "description_merge_threshold": str(description_threshold),
+                        "shortlog_merge_threshold": str(shortlog_threshold),
+                    },
                 )
             ),
         )
 
-    @staticmethod
-    def _convert_consistency_to_state_output(output: ConsistencyAgentOutput) -> StateAgentOutput:
-        """把一致性代理 DSL 输出转换为状态补丁运行时可消费的统一结构。"""
-        return StateAgentOutput(
-            llm_output=StateAgentLlmOutput(changes=[item.model_copy(deep=True) for item in output.llm_output.changes]),
-            system_output=StateAgentSystemOutput(
-                patch_meta=PatchMeta.model_validate(output.system_output.patch_meta.model_dump(mode="json"))
-            ),
-        )
-
     async def _run_consistency_cycle(self, *, turn_id: int, trace_id: int) -> Optional[Dict[str, Any]]:
-        """在固定回合间隔触发一致性检查、修补与系统侧维护。"""
+        """????????????????? LLM ??????????????"""
         if turn_id % self._description_add_interval != 0:
             return None
 
-        checkpoint = self.world_state.capture_checkpoint()
+        agent_input = self._build_consistency_input(turn_id=turn_id, trace_id=trace_id)
+        if agent_input is None:
+            return {
+                "triggered": True,
+                "ok": True,
+                "blocked": False,
+                "retry_count": 0,
+                "patch": {"llm_output": {"changes": [], "can_proceed": True, "system_message": ""}},
+                "maintenance": {"skipped": True},
+                "system_message": "",
+                "error_history": [],
+            }
+
         validation_feedback: Optional[Dict[str, Any]] = None
-        final_output: Optional[ConsistencyAgentOutput] = None
         error_history: List[Dict[str, Any]] = []
         max_retry = int(self.config.system.max_retry_count)
+        final_output: Optional[ConsistencyAgentOutput] = None
 
         for retry_seq in range(max_retry + 1):
-            agent_input = self._build_consistency_input(turn_id=turn_id, trace_id=trace_id)
-            agent_input.system_input.execution.world_version = int(checkpoint["version"])
             output = await asyncio.to_thread(
                 self.consistency_agent.run,
                 agent_input=agent_input,
@@ -284,31 +312,10 @@ class Engine:
                 validation_feedback=validation_feedback,
             )
             final_output = output
-
-            if not output.llm_output.can_proceed:
-                self._consistency_blocking_message = output.llm_output.system_message or "一致性冲突无法自动修复"
-                return {
-                    "triggered": True,
-                    "ok": False,
-                    "blocked": True,
-                    "retry_count": retry_seq,
-                    "patch": output.model_dump(mode="json"),
-                    "maintenance": None,
-                    "system_message": self._consistency_blocking_message,
-                    "error_history": error_history,
-                }
-
             try:
-                if output.llm_output.changes:
-                    async with self._state_commit_lock:
-                        await asyncio.to_thread(
-                            self.state_patch_runtime.apply_patch,
-                            self._convert_consistency_to_state_output(output),
-                        )
-                maintenance = await asyncio.to_thread(self._apply_consistency_maintenance, turn_id)
+                maintenance = await asyncio.to_thread(self._apply_consistency_changes, output, turn_id)
                 self._persist_world_snapshot()
                 self._persist_narrative_info()
-                self._consistency_blocking_message = None
                 return {
                     "triggered": True,
                     "ok": True,
@@ -319,72 +326,161 @@ class Engine:
                     "system_message": output.llm_output.system_message,
                     "error_history": error_history,
                 }
-            except StatePatchError as exc:
-                validation_feedback = {
-                    "message": exc.message,
-                    "details": {k: str(v) for k, v in exc.details.items()},
-                    "fix_hint": "请只输出可写字段上的合法原子 DSL 语句。",
-                }
-                error_history.append(
-                    {
-                        "code": exc.code,
-                        "message": exc.message,
-                        "details": exc.details,
-                        "retry_seq": retry_seq,
-                    }
-                )
+            except ValueError as exc:
+                validation_feedback = {"message": str(exc)}
+                error_history.append({"message": str(exc), "retry_seq": retry_seq})
 
-        async with self._state_commit_lock:
-            await asyncio.to_thread(self.world_state.restore_checkpoint, checkpoint)
-        self._persist_world_snapshot()
-        self._consistency_blocking_message = final_output.llm_output.system_message if final_output is not None else "一致性修复失败"
         return {
             "triggered": True,
             "ok": False,
-            "blocked": True,
+            "blocked": False,
             "retry_count": max_retry,
             "patch": final_output.model_dump(mode="json") if final_output is not None else None,
             "maintenance": None,
-            "system_message": self._consistency_blocking_message,
+            "system_message": "??????????????",
             "error_history": error_history,
         }
 
-    def _apply_consistency_maintenance(self, turn_id: int) -> Dict[str, Any]:
-        """执行系统侧一致性维护，包括描述合并、记忆整理与叙事压缩。"""
+    def _apply_consistency_changes(self, output: ConsistencyAgentOutput, turn_id: int) -> Dict[str, Any]:
+        """??????? DSL????? public?key_facts?narrative recent?"""
         store = self.world_state.get_store_copy()
-        merged_count = self._merge_description_add_buffers(store)
-        key_fact_updates = self._rebuild_npc_memory_views(store=store, turn_id=turn_id)
-        narrative_summary = self._compress_narrative_recent(turn_id=turn_id)
-        self.world_state.commit_store(store=store)
-        return {
-            "description_add_merged_count": merged_count,
-            "npc_key_fact_updates": key_fact_updates,
-            "narrative_recent_count": len(self._narrative_info.recent),
-            "compressed_narrative": narrative_summary,
-        }
+        applied = {"world_changes": 0, "narrative_changes": 0}
+        passthrough_changes = []
+        custom_world_touched = False
 
-    def _merge_description_add_buffers(self, store) -> int:
-        """把所有实体的 description.add 合并进 public，并清空 add 缓冲。"""
-        merged_count = 0
-        entities = list(store.maps.values()) + list(store.characters.values()) + list(store.items.values())
-        for entity in entities:
-            add_items = [item.model_copy(deep=True) for item in entity.description.add]
-            if not add_items:
+        for change in output.llm_output.changes:
+            target_path = (change.target_path or "").strip()
+            if not target_path:
+                raise ValueError("consistency change requires target_path")
+            if target_path == "narrative_info.recent":
+                self._apply_consistency_list_change(
+                    current=self._narrative_info.recent,
+                    change=change,
+                    normalizer=lambda entry: self._normalize_narrative_entry(entry, turn_id),
+                )
+                applied["narrative_changes"] += 1
                 continue
-            for item in add_items:
-                content = (item.content or "").strip()
-                if not content:
-                    continue
-                if content not in entity.description.public:
-                    entity.description.public.append(content)
-                    merged_count += 1
-            entity.description.add = []
-        return merged_count
+            if target_path.endswith(".description.public") or target_path.endswith(".description.add") or target_path.endswith(".memory.key_facts"):
+                entity_id, suffix = target_path.split(".", 1)
+                entity = self._get_consistency_entity(store=store, entity_id=entity_id)
+                current = self._resolve_consistency_list(entity=entity, suffix=suffix)
+                normalizer = lambda entry, s=suffix: self._normalize_consistency_entry(entry=entry, suffix=s, turn_id=turn_id)
+                self._apply_consistency_list_change(current=current, change=change, normalizer=normalizer)
+                applied["world_changes"] += 1
+                custom_world_touched = True
+                continue
+            passthrough_changes.append(change)
 
-    def _rebuild_npc_memory_views(self, *, store, turn_id: int) -> Dict[str, List[str]]:
-        """重建 NPC 的 short、short_log、log 与 key_facts 视图，保证窗口稳定。"""
-        updated: Dict[str, List[str]] = {}
-        for char_id, character in store.characters.items():
+        if custom_world_touched:
+            self.world_state.commit_store(store=store)
+            store = self.world_state.get_store_copy()
+
+        if passthrough_changes:
+            async_output = StateAgentOutput(
+                llm_output=StateAgentLlmOutput(changes=passthrough_changes),
+                system_output=StateAgentSystemOutput(
+                    patch_meta=PatchMeta.model_validate(output.system_output.patch_meta.model_dump(mode="json"))
+                ),
+            )
+            self.state_patch_runtime.apply_patch(async_output)
+            applied["world_changes"] += len(passthrough_changes)
+            store = self.world_state.get_store_copy()
+
+        self._normalize_npc_memory_windows(store=store)
+        self.world_state.commit_store(store=store)
+        return applied
+
+    @staticmethod
+    def _get_consistency_entity(*, store, entity_id: str):
+        """??? ID ????????????"""
+        if entity_id.startswith("map-"):
+            return store.maps[entity_id]
+        if entity_id.startswith("char-"):
+            return store.characters[entity_id]
+        if entity_id.startswith("item-"):
+            return store.items[entity_id]
+        raise ValueError(f"unsupported consistency entity id: {entity_id}")
+
+    @staticmethod
+    def _resolve_consistency_list(*, entity, suffix: str):
+        """?????????????????"""
+        if suffix == "description.public":
+            return entity.description.public
+        if suffix == "description.add":
+            return entity.description.add
+        if suffix == "memory.key_facts":
+            return entity.memory.key_facts
+        raise ValueError(f"unsupported consistency target suffix: {suffix}")
+
+    def _apply_consistency_list_change(self, *, current: List[Any], change, normalizer) -> None:
+        """?????????? ADD/REMOVE/SET ?????"""
+        if change.op == "SET":
+            if not isinstance(change.value, list):
+                raise ValueError("consistency SET value must be list")
+            current[:] = [normalizer(item) for item in change.value]
+            return
+        if change.op not in {"ADD", "REMOVE"}:
+            raise ValueError(f"unsupported consistency op: {change.op}")
+        if not isinstance(change.value, list):
+            raise ValueError("consistency list op value must be list")
+        entries = [normalizer(item) for item in change.value]
+        if change.op == "ADD":
+            for entry in entries:
+                if entry not in current:
+                    current.append(entry)
+            return
+        for entry in entries:
+            remove_index = self._find_consistency_entry(current=current, entry=entry)
+            if remove_index is not None:
+                current.pop(remove_index)
+
+    @staticmethod
+    def _find_consistency_entry(*, current: List[Any], entry: Any) -> Optional[int]:
+        """????? content ??????????"""
+        for index, current_entry in enumerate(current):
+            if current_entry == entry:
+                return index
+            if hasattr(current_entry, "content") and hasattr(entry, "content") and current_entry.content == entry.content:
+                return index
+        return None
+
+    @staticmethod
+    def _normalize_consistency_entry(*, entry: Any, suffix: str, turn_id: int) -> Any:
+        """????????????????????????"""
+        if suffix == "description.add":
+            if isinstance(entry, str):
+                return DescriptionAddItem(turn=turn_id, content=entry)
+            if isinstance(entry, dict):
+                payload = dict(entry)
+                payload.setdefault("turn", turn_id)
+                return DescriptionAddItem.model_validate(payload)
+            if hasattr(entry, "content"):
+                return DescriptionAddItem(turn=getattr(entry, "turn", turn_id), content=getattr(entry, "content", ""))
+            raise ValueError("description.add entry must be string/object")
+        if suffix in {"description.public", "memory.key_facts"}:
+            if not isinstance(entry, str):
+                raise ValueError(f"{suffix} entry must be string")
+            return entry.strip()
+        raise ValueError(f"unsupported consistency normalization suffix: {suffix}")
+
+    @staticmethod
+    def _normalize_narrative_entry(entry: Any, turn_id: int):
+        """??? recent ????? NarrativeEntry?"""
+        from src.data.model.input.agent_narrative_input import NarrativeEntry
+
+        if isinstance(entry, str):
+            return NarrativeEntry(turn=turn_id, content=entry)
+        if isinstance(entry, dict):
+            payload = dict(entry)
+            payload.setdefault("turn", turn_id)
+            return NarrativeEntry.model_validate(payload)
+        if hasattr(entry, "content"):
+            return NarrativeEntry(turn=getattr(entry, "turn", turn_id), content=getattr(entry, "content", ""))
+        raise ValueError("narrative_info.recent entry must be string/object")
+
+    def _normalize_npc_memory_windows(self, *, store) -> None:
+        """???????????????????????? key_facts?"""
+        for character in store.characters.values():
             memory = character.memory
             memory.short = [item for item in memory.short if (item or "").strip()][-self._npc_memory_turn_limit :]
             memory.short_log = [
@@ -399,53 +495,6 @@ class Engine:
             ]
             if memory.current_event:
                 memory.current_event = memory.current_event.strip()
-            if memory.current_event and (not memory.short_log or memory.short_log[-1].turn != turn_id):
-                memory.short_log.append(ShortLogItem(turn=turn_id, event=memory.current_event))
-                memory.short_log = memory.short_log[-self._npc_shortlog_turn_limit :]
-            memory.key_facts = self._extract_key_facts(memory.short_log)
-            updated[char_id] = list(memory.key_facts)
-        return updated
-
-    @staticmethod
-    def _extract_key_facts(short_log: List[ShortLogItem]) -> List[str]:
-        """从 short_log 中提炼可复用的关键事实，按最近优先去重。"""
-        facts: List[str] = []
-        seen = set()
-        for item in reversed(short_log):
-            text = " ".join((item.event or "").split())
-            if not text or text in seen:
-                continue
-            seen.add(text)
-            facts.append(text)
-            if len(facts) >= 5:
-                break
-        facts.reverse()
-        return facts
-
-    def _compress_narrative_recent(self, *, turn_id: int) -> str:
-        """把 narrative recent 压缩为单条事实，旧条目滚入 narrative_log。"""
-        if not self._narrative_info.recent:
-            return ""
-        if len(self._narrative_info.recent) == 1:
-            return self._narrative_info.recent[0].content
-
-        merged_parts: List[str] = []
-        seen = set()
-        for entry in self._narrative_info.recent:
-            text = " ".join((entry.content or "").split())
-            if not text or text in seen:
-                continue
-            seen.add(text)
-            merged_parts.append(text)
-        compressed = "；".join(merged_parts)
-        if not compressed:
-            self._narrative_info.recent = []
-            return ""
-
-        for entry in self._narrative_info.recent:
-            self._narrative_info.append_log(turn=entry.turn, content=entry.content, source="consistency_recent_archive")
-        self._narrative_info.recent = [self._narrative_info.recent[-1].model_copy(update={"turn": turn_id, "content": compressed})]
-        return compressed
 
     def _dm_handler(self, envelope) -> Dict[str, Any]:
         chain_e1 = E1InputInfo(
