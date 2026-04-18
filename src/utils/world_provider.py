@@ -188,6 +188,17 @@ class WorldDataProvider:
         """
         map_entity = self.world_state.get_map(map_id)
         entities = []
+        move_target_ids = [
+            target_id
+            for target_id in (
+                self._resolve_connection_target_map_id(map_id, conn)
+                for conn in map_entity.connections
+            )
+            if target_id
+        ]
+        if map_id not in move_target_ids:
+            move_target_ids.insert(0, map_id)
+        move_targets_hint = "、".join(move_target_ids)
 
         # 1. 地图实体
         map_writable_fields = [
@@ -228,7 +239,7 @@ class WorldDataProvider:
                     field_name="位置",
                     current_value=char.location,
                     value_type="string",
-                    description="角色当前所在位置"
+                    description=f"角色当前所在位置；可选目标地图ID：{move_targets_hint}"
                 ),
                 WritableFieldInfo(
                     field_path="description.add",
@@ -273,7 +284,7 @@ class WorldDataProvider:
                     field_name="位置",
                     current_value=item.location,
                     value_type="string",
-                    description="物品当前所在位置"
+                    description=f"物品当前所在位置；可选地图ID：{move_targets_hint}"
                 ),
                 WritableFieldInfo(
                     field_path="description.add",

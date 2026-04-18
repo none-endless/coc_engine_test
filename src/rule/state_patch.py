@@ -391,10 +391,25 @@ class StatePatchRuntime:
 
         if entity_type == "character":
             if value not in snapshot.get("maps", {}):
-                raise StatePatchError(ERROR_INVALID_TARGET, f"invalid move target map: {value}")
+                raise StatePatchError(
+                    ERROR_INVALID_TARGET,
+                    f"invalid move target map: {value}",
+                    details={
+                        "invalid_target": value,
+                        "valid_target_map_ids": sorted(snapshot.get("maps", {}).keys()),
+                    },
+                )
         elif entity_type == "item":
             if value not in snapshot.get("maps", {}) and value not in snapshot.get("characters", {}):
-                raise StatePatchError(ERROR_INVALID_TARGET, f"invalid move target: {value}")
+                raise StatePatchError(
+                    ERROR_INVALID_TARGET,
+                    f"invalid move target: {value}",
+                    details={
+                        "invalid_target": value,
+                        "valid_target_map_ids": sorted(snapshot.get("maps", {}).keys()),
+                        "valid_target_character_ids": sorted(snapshot.get("characters", {}).keys()),
+                    },
+                )
         else:
             raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "MOVE only supports character/item")
 

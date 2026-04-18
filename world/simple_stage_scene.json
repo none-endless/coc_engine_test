@@ -1,5 +1,5 @@
 {
-  "scene_name": "phase1-3 链路冒烟场景",
+  "scene_name": "phase1-5 stage smoke scene",
   "default_actor_id": "char-player-0000",
   "default_mode": "phase3",
   "turn_start": 1,
@@ -10,6 +10,18 @@
     "我走向走廊",
     "我偷偷观察守卫"
   ],
+  "scripted_inputs": [
+    "\\look",
+    "我调查桌上的笔记",
+    "我和守卫搭话，观察他的反应",
+    "我走向走廊",
+    "我返回值班室",
+    "我偷偷观察守卫",
+    "我再次调查桌上的笔记",
+    "我攻击守卫",
+    "我退后两步继续观察",
+    "我走向走廊"
+  ],
   "store": {
     "maps": {
       "map-room-0001": {
@@ -17,8 +29,8 @@
         "name": "值班室",
         "description": {
           "public": [
-            "一间狭小的值班室。",
-            "桌上放着几页值班笔记，门外通向一条昏暗走廊。"
+            "一间狭小而压抑的值班室。",
+            "桌上散着几页值班笔记，门外连接着一条昏暗走廊。"
           ],
           "hint": "",
           "add": []
@@ -28,7 +40,7 @@
             "id": "map-hall-0002",
             "name": "走廊门",
             "direction": "east",
-            "description": "一扇通向走廊的门",
+            "description": "一扇通往走廊的门",
             "is_locked": false,
             "condition": null
           }
@@ -40,8 +52,8 @@
         "name": "走廊",
         "description": {
           "public": [
-            "这是一条光线很差的长走廊。",
-            "空气里有淡淡的铁锈味，远处传来脚步声。"
+            "这是一条光线很差的狭长走廊。",
+            "空气里混着铁锈味，远处偶尔传来脚步声。"
           ],
           "hint": "",
           "add": []
@@ -84,7 +96,7 @@
           },
           "investigation": {
             "id": "investigation",
-            "name": "侦查",
+            "name": "调查",
             "value": 60,
             "max_value": 100,
             "min_value": 0,
@@ -105,7 +117,7 @@
       "char-guard-0001": {
         "id": "char-guard-0001",
         "name": "守卫",
-        "basic_info": "值班室附近的普通守卫。",
+        "basic_info": "一名负责值班室附近区域的普通守卫。",
         "location": "map-room-0001",
         "attributes": {
           "dexterity": {
@@ -126,7 +138,7 @@
           },
           "investigation": {
             "id": "investigation",
-            "name": "侦查",
+            "name": "调查",
             "value": 35,
             "max_value": 100,
             "min_value": 0,
