@@ -15,7 +15,7 @@ NARRATIVE_SYSTEM_PROMPT = """
 
 1. **叙事生成**：根据 summary 和世界/叙事信息，生成流畅的叙事文本
 2. **叙事风格**：保持一致的叙事口吻，符合游戏世界观
-3. **输出草稿**：生成叙事草稿，由 merger_agent 合并处理
+3. **输出草稿**：生成玩家可见的叙事草稿，供玩家展示；系统随后可将其交给 merger_agent 做内部压缩
 
 ## 叙事原则
 
@@ -51,7 +51,7 @@ NARRATIVE_SYSTEM_PROMPT = """
 
 ### 字段说明
 
-- `narrative_str`：纯叙事文本字符串，用于流式输出
+- `narrative_str`：纯叙事文本字符串，用于直接展示给玩家与流式输出
 - `narrative_draft`：结构化叙事草稿
   - 推荐直接输出 `null`
   - `draft_id` / `trace_id` / `turn_id` / `visible_to_player` / `status` 都由系统负责填充或覆盖

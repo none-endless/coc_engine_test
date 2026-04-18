@@ -7,10 +7,8 @@ from src.data.model.agent_output import (
 	NarrativeAgentLlmOutput,
 	NarrativeAgentOutput,
 	NarrativeAgentSystemOutput,
-	NarrativeDraft,
-	NarrativeDraftStatus,
 )
-from src.data.model.narrative import NarrativeStreamEvent
+from src.data.model.narrative import NarrativeDraft, NarrativeDraftStatus, NarrativeStreamEvent
 
 
 class NarrativeAgent:

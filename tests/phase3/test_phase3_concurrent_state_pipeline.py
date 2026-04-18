@@ -184,9 +184,10 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
 
         branches = {x["branch"] for x in result["parallel_timeline"]}
         self.assertEqual(branches, {"npc_scheduler", "state", "narrative", "merger"})
-        self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "你离开房间，走入了走廊。")
+        self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "你推门离开房间，走廊里的冷风迎面扑来。")
         self.assertEqual(result["narrative"]["llm_output"]["narrative_draft"]["status"], "committed")
         self.assertTrue(result["narrative"]["stream_events"])
+        self.assertEqual(result["merger"]["llm_output"]["narrative_str"], "你离开房间，走入了走廊。")
 
     def test_set_description_public_and_char_index_are_blocked(self):
         runtime = StatePatchRuntime(world_state=self.world)
@@ -440,7 +441,7 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
                 trace_id=1000 + turn_id,
             )
 
-        self.assertNotIn("narrative_info", service.payloads["state"])
+        self.assertNotIn("narrative_info", service.payloads["state_change"])
         self.assertIn("narrative_draft", service.payloads["merger"])
         self.assertEqual(len(engine._narrative_info.recent), 5)
         self.assertGreaterEqual(len(engine._narrative_info.narrative_log), 2)

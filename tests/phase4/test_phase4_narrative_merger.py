@@ -128,11 +128,53 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
             trace_id=4004,
         )
 
-        self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "他离开房间，走入了走廊。")
+        self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "他推门走出房间，走廊里的冷风立刻扑了上来。")
         self.assertEqual(result["merger"]["llm_output"]["narrative_str"], "他离开房间，走入了走廊。")
         self.assertEqual(result["narrative"]["llm_output"]["narrative_draft"]["status"], "committed")
         self.assertEqual(result["narrative_info"]["recent"][-1]["content"], "他离开房间，走入了走廊。")
         self.assertEqual(self.world.get_character("char-player-0000").location, "map-hall-0002")
+
+    def test_invisible_evolution_does_not_generate_narrative_or_merger(self):
+        class InvisibleLLMService(Phase4FakeLLMService):
+            def call_llm_json(
+                self,
+                *,
+                agent_name: str,
+                system_prompt: str,
+                user_payload: Dict[str, Any],
+                output_model: Type[BaseModel],
+                retry_budget: int,
+                validation_feedback: Any = None,
+            ) -> BaseModel:
+                if output_model is EvolutionAgentLlmOutput:
+                    return output_model.model_validate(
+                        {
+                            "summary": "远处有什么东西轻轻移动了一下",
+                            "visible_to_player": False,
+                        }
+                    )
+                return super().call_llm_json(
+                    agent_name=agent_name,
+                    system_prompt=system_prompt,
+                    user_payload=user_payload,
+                    output_model=output_model,
+                    retry_budget=retry_budget,
+                    validation_feedback=validation_feedback,
+                )
+
+        engine = Engine(world_state=self.world, mode="phase3", llm_service=InvisibleLLMService())
+        result = engine.run_turn(
+            raw_input="我在原地等待",
+            actor_id="char-player-0000",
+            turn_id=5,
+            trace_id=5005,
+        )
+
+        self.assertFalse(result["narrative_triggered"])
+        self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "")
+        self.assertIsNone(result["narrative"]["llm_output"]["narrative_draft"])
+        self.assertIsNone(result["merger"])
+        self.assertEqual(result["narrative_info"]["recent"], [])
 
 
 if __name__ == "__main__":

@@ -600,7 +600,6 @@ class Engine:
             merger_payload = merger_out.model_dump(mode="json")
             narrative_out.llm_output.narrative_draft.status = NarrativeDraftStatus.COMMITTED
             narrative_payload["llm_output"]["narrative_draft"] = narrative_out.llm_output.narrative_draft.model_dump(mode="json")
-            narrative_payload["llm_output"]["narrative_str"] = merger_out.llm_output.narrative_str
             self._narrative_info.add_narrative(
                 turn=turn_id,
                 content=merger_out.llm_output.narrative_str,

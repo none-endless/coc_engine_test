@@ -2,7 +2,7 @@
 
 ## 目标
 
-提供 Narrative 分支面向前端的轻量流式事件格式，便于后续接入 SSE 或 WebSocket。
+提供 Narrative 分支面向前端的轻量流式事件格式，便于后续接入 SSE 或 WebSocket。这里的流式内容就是玩家实际看到的 narrative 原文，不是 merger 压缩结果。
 
 ## 当前实现
 
@@ -46,3 +46,8 @@
 - `delta_count`
 
 后续若接入真实 SSE/WebSocket，可保持事件格式不变，只替换事件发送时机。
+
+## 边界说明
+
+- 只有 `evolution_agent.visible_to_player = true` 时才会产生这些流式事件。
+- merger 输出仅服务内部提示词压缩，不应进入玩家流式显示链路。
