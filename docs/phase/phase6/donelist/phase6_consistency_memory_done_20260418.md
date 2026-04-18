@@ -6,7 +6,6 @@
   - `changes`
   - `can_proceed`
   - `system_message`
-- 一致性 agent prompt 收敛为最小 JSON，不再输出维护摘要、冲突列表、keyFacts、压缩叙事等冗余字段。
 - 引擎接入 phase6 周期维护流程：
   - 按 `description.add_interval` 固定回合触发
   - 执行一致性 DSL 修补
@@ -44,5 +43,4 @@ python -m unittest tests.phase3.test_phase3_concurrent_state_pipeline
 
 ## 当前边界
 
-- `key_facts` 与 `narrative recent` 压缩目前由系统侧确定性策略维护，不走额外冗长 LLM 输出。
 - 一致性 agent 只负责世界池修补 DSL 与阻断判定，符合 draft_spec 中“世界真值优先”和 `agent.md` 中“LLM I/O 精确且短”的约束。

@@ -1,0 +1,110 @@
+# Phase7 开发者手册（如何用引擎制作游戏）
+
+## 1. 手册目标
+本手册面向要基于本引擎制作文字冒险游戏的开发者，覆盖：
+- 世界文件制作
+- 配置与模型接入
+- 运行与调试
+- 常见扩展点
+
+## 2. 环境准备（conda）
+```powershell
+conda activate a_engine
+cd C:\Users\25173\Desktop\engine_refacting
+```
+
+推荐先确认：
+```powershell
+python -V
+python -c "import streamlit, pydantic; print(streamlit.__version__, pydantic.__version__)"
+```
+
+## 3. 创建一个新世界
+### 3.1 新建场景文件
+在 `world/` 下新增 JSON，例如 `world/my_scene.json`，字段最小集合：
+- `scene_name`
+- `default_actor_id`
+- `default_mode`
+- `turn_start`
+- `recommended_inputs` / `scripted_inputs`
+- `store`：包含 `maps` / `characters` / `items`
+
+可复制 `world/simple_stage_scene.json` 后修改。
+
+### 3.2 实体 ID 规范
+遵循草案规范：
+- 地图：`map-xxx-0000`
+- 角色：`char-xxx-0000`
+- 物品：`item-xxx-0000`
+- 玩家固定 ID 建议：`char-player-0000`
+
+### 3.3 必填属性约束
+角色属性必须包含“敏捷/dexterity”这一核心字段，否则引擎启动会被拦截（`validate_required_dexterity`）。
+
+## 4. 配置说明
+主配置文件：`config/config.yaml`
+
+关键配置：
+- `llm`：模型、地址、key、温度、超时
+- `system`：state patch 重试与降级
+- `agent`：DM/NPC/Narrative 记忆窗口与预算
+- `storage`：世界真值与叙事真值 SQLite 路径
+- `description`：一致性维护触发阈值
+
+优先级：命令行覆盖 > 环境变量 > 配置文件 > 默认值。
+
+## 5. 运行方式
+### 5.1 命令行 REPL
+```powershell
+python world/run_stage_main.py --mode phase3 --scene world/simple_stage_scene.json
+```
+
+### 5.2 Streamlit 游玩与调试
+```powershell
+streamlit run streamlit_app.py
+```
+
+在 UI 中你可以：
+- 选择世界
+- 切换 phase2/phase3/phase4
+- 切换真实 LLM 与本地假服务
+- 查看每回合 trace、快照、叙事池和 agent I/O
+
+## 6. Agent 扩展工作流
+当你修改任一 agent 时，建议固定顺序：
+1. 更新 `docs/spec/draft_spec.md` 或对应 phase 要求
+2. 更新 `src/data/model/*` 模型
+3. 更新 `src/agent/prompt/*` 提示词
+4. 更新 `src/agent/llm/*` 调用实现
+5. 更新 `src/engine/engine.py` 的调用与集成
+6. 补测试（`tests/phase*/`）并记录到 phase donelist
+
+## 7. 调试与验收建议
+### 7.1 trace_id 全链路追踪
+使用 Streamlit Debug 面板，按回合查看：
+- E1-E7 结构化链路
+- 并发时间线
+- 每个 agent 的输入/输出
+
+### 7.2 双真值池检查
+检查两个 SQLite：
+- 世界真值：`world/world_snapshots.sqlite3`
+- 叙事真值：`world/narrative_truth.sqlite3`
+
+### 7.3 日志
+- 结构化日志：`world/log/agent_io.jsonl`
+- 全量测试日志：`world/log/full_test_*.log` / `full_test_*.json`
+
+## 8. 常见问题
+1. 启动时报敏捷属性缺失：
+- 角色 attributes 中补齐 dexterity/敏捷。
+2. 真实 LLM 调用失败：
+- 检查 `api_key`、`api_base`、模型名和超时配置。
+3. 回合触发状态回滚：
+- 查看 Debug 面板中的 `state.error_history` 与 `fallback_error`。
+4. 叙事与世界状态不一致：
+- 关注一致性周期触发回合，查看 consistency 输出与阻断信息。
+
+## 9. 交付建议
+- 每次新增场景时，至少准备 10 条 scripted_inputs 做冒烟回放。
+- 任何 agent 字段契约改动必须同步测试和文档。

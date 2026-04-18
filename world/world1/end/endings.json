@@ -1,0 +1,14 @@
+{
+  "endings": [
+    {
+      "id": "ending-escape-hall-0001",
+      "condition": "char-player-0000.location == map-hall-0002",
+      "text": "你成功离开了值班室，踏入走廊深处。潮湿空气里带着自由，也带着未知。"
+    },
+    {
+      "id": "ending-guard-down-0002",
+      "condition": "char-guard-0001.attributes.fight.value <= 0",
+      "text": "守卫彻底失去战斗能力，值班区暂时落入你的控制。"
+    }
+  ]
+}

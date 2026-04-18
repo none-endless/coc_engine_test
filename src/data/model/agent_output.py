@@ -9,7 +9,7 @@ Agent 输出聚合模型。
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .agent_input import E1LlmView, E4EvolutionLlmView, E4SchedulerLlmView
 from .input.agent_chain_input import E2IntentInfo, E7CausalityChain
@@ -239,12 +239,39 @@ class NpcPerformerChainResult(BaseModel):
     e7: E7CausalityChain = Field(default_factory=E7CausalityChain, description="NPC 下游并回主链前的因果链投影")
 
 
+class ConsistencySummaryKind(str, Enum):
+    """一致性压缩结果类型。"""
+
+    NARRATION = "narration"
+    DESCRIPTION = "description"
+    KEY_FACTS = "key_facts"
+
+
+class ConsistencySummaryItem(BaseModel):
+    """一致性维护返回的单条压缩结果。"""
+
+    kind: ConsistencySummaryKind = Field(description="压缩结果类型")
+    value: str = Field(default="", description="压缩后的文本内容")
+
+
 class ConsistencyAgentLlmOutput(AgentLlmOutputBase):
     """一致性维护 agent 的 LLM 输出。"""
 
-    changes: List[StateChangeOp] = Field(default_factory=list, description="一致性修复使用的原子 DSL 变更列表")
+    summary_items: List[ConsistencySummaryItem] = Field(default_factory=list, description="压缩结果列表，首项必须为 narration")
     can_proceed: bool = Field(default=True, description="当前快照是否允许继续被后续流程消费")
     system_message: str = Field(default="", description="最小系统提示，用于阻断或降级消息")
+
+    @model_validator(mode="after")
+    def _validate_summary_items(self) -> "ConsistencyAgentLlmOutput":
+        """强约束输出结构，保证首项为 narration 且所有 value 非空。"""
+        if not self.summary_items:
+            raise ValueError("summary_items 不能为空")
+        if self.summary_items[0].kind != ConsistencySummaryKind.NARRATION:
+            raise ValueError("summary_items 第一项必须是 narration")
+        for item in self.summary_items:
+            if not item.value.strip():
+                raise ValueError("summary_items.value 不能为空")
+        return self
 
 
 class ConsistencyAgentSystemOutput(AgentSystemOutputBase):

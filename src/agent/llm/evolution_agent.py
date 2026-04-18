@@ -52,7 +52,16 @@ class EvolutionAgent:
 
 		llm_output.summary = summary
 
-		chain = causality_chain.model_copy(deep=True) if causality_chain else E7CausalityChain()
+		if causality_chain is None:
+			chain = E7CausalityChain()
+		elif isinstance(causality_chain, E7CausalityChain):
+			chain = causality_chain.model_copy(deep=True)
+		elif hasattr(causality_chain, "model_dump"):
+			chain = E7CausalityChain.model_validate(causality_chain.model_dump(mode="json"))
+		else:
+			chain = E7CausalityChain.model_validate(
+				{"narrative_list": getattr(causality_chain, "narrative_list", [])}
+			)
 		chain.narrative_list.append(
 			{
 				"source": "evolution",

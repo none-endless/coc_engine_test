@@ -1,0 +1,7 @@
+1. 将输入框调整到最下面,聊天框就从下往上出现,输入框始终在最底部,就像微信或者其它常用社交媒体的设计一样,不要像现在这样输入一次,输入一次输入框移动一次
+2. 要把\look这些命令提示给玩家,现在只有我这个创作者知道有这些命令
+3. debug:查看桌上的笔记
+
+回合执行失败: UNIQUE constraint failed: narrative_recent.turn_id
+
+trace_id=1000 | turn_id=1 | route=exception

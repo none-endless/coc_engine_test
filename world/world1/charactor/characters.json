@@ -1,0 +1,80 @@
+{
+  "characters": {
+    "char-player-0000": {
+      "id": "char-player-0000",
+      "name": "测试玩家",
+      "basic_info": "一名刚进入值班区的调查者。",
+      "location": "map-room-0001",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 55,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "fight": {
+          "id": "fight",
+          "name": "格斗",
+          "value": 65,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "近身战斗能力"
+        },
+        "investigation": {
+          "id": "investigation",
+          "name": "调查",
+          "value": 60,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "调查与搜索能力"
+        },
+        "stealth": {
+          "id": "stealth",
+          "name": "潜行",
+          "value": 50,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "隐蔽行动能力"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    },
+    "char-guard-0001": {
+      "id": "char-guard-0001",
+      "name": "守卫",
+      "basic_info": "一名负责值班室附近区域的普通守卫。",
+      "location": "map-room-0001",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 40,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "fight": {
+          "id": "fight",
+          "name": "格斗",
+          "value": 45,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "近身战斗能力"
+        },
+        "investigation": {
+          "id": "investigation",
+          "name": "调查",
+          "value": 35,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "调查与搜索能力"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    }
+  }
+}

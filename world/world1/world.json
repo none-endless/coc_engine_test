@@ -1,0 +1,10 @@
+{
+  "scene_name": "world1 unified adventure",
+  "default_actor_id": "char-player-0000",
+  "turn_start": 1,
+  "recommended_inputs": [
+    "\\look",
+    "我调查桌上的笔记",
+    "我走向走廊"
+  ]
+}

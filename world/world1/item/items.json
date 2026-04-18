@@ -1,0 +1,18 @@
+{
+  "items": {
+    "item-note-0001": {
+      "id": "item-note-0001",
+      "name": "值班笔记",
+      "description": {
+        "public": [
+          "几页记录着出入时间的值班笔记。"
+        ],
+        "hint": "调查后可获得线索。",
+        "add": []
+      },
+      "location": "map-room-0001",
+      "is_portable": true,
+      "extensions": {}
+    }
+  }
+}

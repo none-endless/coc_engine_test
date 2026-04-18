@@ -97,13 +97,18 @@ class SqliteNarrativeRepository:
 
     def save(self, narrative_info: NarrativeInfo) -> None:
         """把当前 NarrativeInfo 全量刷入 SQLite，作为 narrative truth 单一持久化事实源。"""
+        recent_by_turn = {}
+        for recent_item in narrative_info.recent:
+            recent_by_turn[int(recent_item.turn)] = recent_item
+
         with closing(self._connect()) as connection:
             connection.execute("DELETE FROM narrative_recent")
             connection.execute("DELETE FROM narrative_log")
-            for recent_item in narrative_info.recent:
+            for turn_id in sorted(recent_by_turn.keys()):
+                recent_item = recent_by_turn[turn_id]
                 connection.execute(
                     """
-                    INSERT INTO narrative_recent(turn_id, content, source, committed_at)
+                    INSERT OR REPLACE INTO narrative_recent(turn_id, content, source, committed_at)
                     VALUES (?, ?, ?, datetime('now'))
                     """,
                     (recent_item.turn, recent_item.content, "merger_agent"),

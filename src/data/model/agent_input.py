@@ -280,11 +280,35 @@ class ConsistencyRecentChangeLog(BaseModel):
     summary: str = Field(default="", description="供一致性维护使用的简短摘要")
 
 
+class ConsistencyNarrationCandidate(BaseModel):
+    """一致性维护中待压缩的叙事候选条目。"""
+
+    turn: int = Field(default=0, description="叙事发生回合")
+    content: str = Field(default="", description="叙事文本")
+
+
+class ConsistencyDescriptionCandidate(BaseModel):
+    """一致性维护中待压缩的描述候选条目。"""
+
+    entity_id: str = Field(default="", description="待维护实体 ID")
+    public: List[str] = Field(default_factory=list, description="实体当前 public 描述")
+    add: List[str] = Field(default_factory=list, description="待合并的 add 描述内容")
+
+
+class ConsistencyKeyFactsCandidate(BaseModel):
+    """一致性维护中待提炼 key_facts 的候选条目。"""
+
+    character_id: str = Field(default="", description="NPC 角色 ID")
+    key_facts: List[str] = Field(default_factory=list, description="当前 key_facts")
+    short_log: List[str] = Field(default_factory=list, description="待压缩的 short_log 事件")
+
+
 class ConsistencyAgentLlmInput(BaseModel):
     """一致性维护 agent 的 LLM 输入。"""
 
-    world_snapshot: Dict[str, Any] = Field(default_factory=dict, description="当前世界快照")
-    narrative_info: NarrativeInfo = Field(description="当前叙事真值")
+    narration_candidates: List[ConsistencyNarrationCandidate] = Field(default_factory=list, description="待压缩叙事列表")
+    description_candidates: List[ConsistencyDescriptionCandidate] = Field(default_factory=list, description="待压缩描述列表")
+    key_facts_candidates: List[ConsistencyKeyFactsCandidate] = Field(default_factory=list, description="待提炼 key_facts 列表")
     recent_change_logs: List[ConsistencyRecentChangeLog] = Field(default_factory=list, description="最近若干回合的变更日志")
 
 

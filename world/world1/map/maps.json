@@ -1,0 +1,50 @@
+{
+  "maps": {
+    "map-room-0001": {
+      "id": "map-room-0001",
+      "name": "值班室",
+      "description": {
+        "public": [
+          "一间狭小而压抑的值班室。",
+          "桌上散着几页值班笔记，门外连接着一条昏暗走廊。"
+        ],
+        "hint": "玩家可以调查笔记，也可以移动到走廊。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "map-hall-0002",
+          "name": "走廊门",
+          "direction": "east",
+          "description": "一扇通往走廊的门",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {}
+    },
+    "map-hall-0002": {
+      "id": "map-hall-0002",
+      "name": "走廊",
+      "description": {
+        "public": [
+          "这是一条光线很差的狭长走廊。",
+          "空气里混着铁锈味，远处偶尔传来脚步声。"
+        ],
+        "hint": "当玩家抵达此处可触发离开值班室结局。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "map-room-0001",
+          "name": "值班室门",
+          "direction": "west",
+          "description": "返回值班室",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {}
+    }
+  }
+}

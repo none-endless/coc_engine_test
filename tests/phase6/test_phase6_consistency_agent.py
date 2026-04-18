@@ -19,7 +19,6 @@ from src.data.model.base import (
     Attribute,
     CharacterEntity,
     Description,
-    DescriptionAddItem,
     MapEntity,
     MemoryForNpc,
     ShortLogItem,
@@ -43,7 +42,7 @@ class Phase6FakeLLMService:
             }
         )
         self.consistency_payload = consistency_payload or {
-            "changes": [],
+            "summary_items": [{"kind": "narration", "value": "本回合无新增叙事。"}],
             "can_proceed": True,
             "system_message": "",
         }
@@ -168,26 +167,18 @@ class TestPhase6ConsistencyAgent(unittest.TestCase):
     def test_consistency_trigger_merges_description_and_maintains_memory(self):
         engine = self._build_engine(
             consistency_payload={
-                "changes": [
+                "summary_items": [
                     {
-                        "op": "ADD",
-                        "target_path": "map-room-0001.description.public",
-                        "value": ["墙面上留下了一道新的擦痕"],
+                        "kind": "narration",
+                        "value": "房间里出现了新的擦痕，守卫开始调查。局势进入紧张阶段。",
                     },
                     {
-                        "op": "REMOVE",
-                        "target_path": "map-room-0001.description.add",
-                        "value": [{"content": "墙面上多了一道新擦痕"}],
+                        "kind": "description",
+                        "value": "墙面上留下了新擦痕，房间不再如最初那般整洁。",
                     },
                     {
-                        "op": "SET",
-                        "target_path": "char-guard-0001.memory.key_facts",
-                        "value": ["房间内出现了新的擦痕", "守卫已开始调查异常痕迹"],
-                    },
-                    {
-                        "op": "SET",
-                        "target_path": "narrative_info.recent",
-                        "value": [{"turn": 2, "content": "房间里出现了新的擦痕，守卫开始调查。"}],
+                        "kind": "key_facts",
+                        "value": "守卫确认房间出现异常擦痕并已启动调查。",
                     },
                 ],
                 "can_proceed": True,
@@ -207,40 +198,52 @@ class TestPhase6ConsistencyAgent(unittest.TestCase):
         )
 
         updated_room = self.world.get_map("map-room-0001")
-        self.assertIn("墙面上留下了一道新的擦痕", updated_room.description.public)
+        self.assertEqual(updated_room.description.public, ["墙面上留下了新擦痕，房间不再如最初那般整洁。"])
         self.assertEqual(updated_room.description.add, [])
         self.assertIsNotNone(result["consistency"])
         self.assertTrue(result["consistency"]["ok"])
         self.assertEqual(len(result["narrative_info"]["recent"]), 1)
         updated_guard = self.world.get_character("char-guard-0001")
-        self.assertEqual(updated_guard.memory.key_facts, ["房间内出现了新的擦痕", "守卫已开始调查异常痕迹"])
-        self.assertEqual(result["narrative_info"]["recent"][-1]["content"], "房间里出现了新的擦痕，守卫开始调查。")
+        self.assertEqual(updated_guard.memory.key_facts, ["守卫确认房间出现异常擦痕并已启动调查。"])
+        self.assertEqual(updated_guard.memory.short_log, [])
+        self.assertEqual(result["narrative_info"]["recent"][-1]["content"], "房间里出现了新的擦痕，守卫开始调查。局势进入紧张阶段。")
 
-    def test_consistency_agent_dsl_changes_are_applied(self):
+    def test_consistency_can_block_and_stop_following_turns(self):
         engine = self._build_engine(
             consistency_payload={
-                "changes": [
+                "summary_items": [
                     {
-                        "op": "MOVE",
-                        "target_path": "char-player-0000.location",
-                        "value": "map-hall-0002",
-                        "reason": "修复位置真值冲突",
+                        "kind": "narration",
+                        "value": "当前快照出现冲突，已暂停后续流程。",
                     }
                 ],
-                "can_proceed": True,
-                "system_message": "",
+                "can_proceed": False,
+                "system_message": "一致性冲突，需人工检查。",
             }
         )
 
-        result = engine.run_turn(
+        blocked_turn = engine.run_turn(
             raw_input="我观察房间",
             actor_id="char-player-0000",
             turn_id=2,
             trace_id=2202,
         )
 
-        self.assertTrue(result["consistency"]["ok"])
-        self.assertEqual(self.world.get_character("char-player-0000").location, "map-hall-0002")
+        self.assertIsNotNone(blocked_turn["consistency"])
+        self.assertTrue(blocked_turn["consistency"]["blocked"])
+        self.assertEqual(blocked_turn["fallback_error"]["code"], "CONSISTENCY_BLOCKED")
+        self.assertTrue(blocked_turn["terminated"])
+
+        next_turn = engine.run_turn(
+            raw_input="我继续前进",
+            actor_id="char-player-0000",
+            turn_id=3,
+            trace_id=2203,
+        )
+
+        self.assertEqual(next_turn["route"], "consistency_blocked")
+        self.assertEqual(next_turn["message"], "一致性冲突，需人工检查。")
+        self.assertTrue(next_turn["terminated"])
 
     def test_consistency_skips_when_not_on_trigger_turn(self):
         engine = self._build_engine()

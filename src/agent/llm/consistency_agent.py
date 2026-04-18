@@ -14,7 +14,7 @@ from src.data.model.agent_output import (
 
 
 class ConsistencyAgent:
-    """一致性维护代理，负责生成可复用的状态修补 DSL。"""
+    """一致性维护代理，负责生成最小化压缩摘要列表。"""
 
     def __init__(self, llm_service: LLMServiceBase) -> None:
         self.llm_service = llm_service
@@ -27,7 +27,7 @@ class ConsistencyAgent:
         patch_id: Optional[str] = None,
         validation_feedback: Optional[dict] = None,
     ) -> ConsistencyAgentOutput:
-        """调用 LLM 生成一致性修补结果，并补齐系统侧补丁元数据。"""
+        """调用 LLM 生成一致性压缩结果，并补齐系统侧补丁元数据。"""
         llm_output = self.llm_service.call_llm_json(
             agent_name="consistency",
             system_prompt=CONSISTENCY_SYSTEM_PROMPT,

@@ -53,6 +53,11 @@ class NarrativeInfo(BaseModel):
 
     def add_narrative(self, turn: int, content: str, source: str = "merger_agent", max_recent: int = 5) -> None:
         """追加正式叙事真值。"""
+        for index in range(len(self.recent) - 1, -1, -1):
+            if self.recent[index].turn == turn:
+                # 同回合重复写入时以最新内容覆盖，避免持久化唯一键冲突。
+                self.recent[index].content = content
+                return
         self._append_with_rollover(
             entry=NarrativeEntry(turn=turn, content=content),
             source=source,
