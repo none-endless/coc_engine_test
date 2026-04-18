@@ -24,5 +24,11 @@ agent:
   narrative:
     recent_turns: 5
 
+storage:
+  world:
+    sqlite_path: world/world_snapshots.sqlite3
+  narrative:
+    sqlite_path: world/narrative_truth.sqlite3
+
 description:
   add_interval: 10

@@ -10,6 +10,7 @@ from src.data.model.agent_output import (
     EvolutionAgentLlmOutput,
     MergerAgentLlmOutput,
     NarrativeAgentLlmOutput,
+    NpcPerformerAgentLlmOutput,
     NpcSchedulerAgentLlmOutput,
     PatchMeta,
     StateAgentLlmOutput,
@@ -83,6 +84,20 @@ class FakeLLMService:
                         "scheduled_npc_ids": [],
                         "extra_npc_context": {},
                     }
+                }
+            )
+
+        if output_model is NpcPerformerAgentLlmOutput:
+            return output_model.model_validate(
+                {
+                    "intent": "description",
+                    "action_text": "守卫握紧武器，继续保持警惕。",
+                    "routing_hint": None,
+                    "attributes": [],
+                    "against_char_id": [],
+                    "difficulty": None,
+                    "change_basic_goal": None,
+                    "change_active_goal": "继续警戒",
                 }
             )
 
@@ -324,6 +339,103 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
         self.assertEqual(before["maps"], after["maps"])
         self.assertEqual(before["characters"], after["characters"])
         self.assertEqual(before["items"], after["items"])
+
+    def test_state_rollback_skips_npc_performer_side_effects(self):
+        room = MapEntity(
+            id="map-room-0001",
+            name="房间",
+            description=Description(public=["一间狭小的房间"]),
+        )
+        player = CharacterEntity(
+            id="char-player-0000",
+            name="玩家",
+            location=room.id,
+            attributes={
+                "dexterity": Attribute(id="dexterity", name="敏捷", value=70, max_value=100, min_value=0),
+                "health": Attribute(id="health", name="生命", value=10, max_value=10, min_value=0),
+            },
+        )
+        guard = CharacterEntity(
+            id="char-guard-0001",
+            name="守卫",
+            location=room.id,
+            attributes={
+                "dexterity": Attribute(id="dexterity", name="敏捷", value=55, max_value=100, min_value=0),
+                "health": Attribute(id="health", name="生命", value=10, max_value=10, min_value=0),
+            },
+        )
+        self.world.reset(
+            WorldEntityStore(
+                maps={room.id: room},
+                characters={player.id: player, guard.id: guard},
+                items={},
+            )
+        )
+
+        class RollbackNpcLLMService(FakeLLMService):
+            def call_llm_json(
+                self,
+                *,
+                agent_name: str,
+                system_prompt: str,
+                user_payload: Dict[str, Any],
+                output_model: Type[BaseModel],
+                retry_budget: int,
+                validation_feedback: Any = None,
+            ) -> BaseModel:
+                if output_model is NpcSchedulerAgentLlmOutput:
+                    return output_model.model_validate(
+                        {
+                            "step_result": {
+                                "summary": "守卫被调度，需要检查周围动静。",
+                                "scheduled_npc_ids": ["char-guard-0001"],
+                                "extra_npc_context": {"char-guard-0001": "你听见附近有异常声响。"},
+                            }
+                        }
+                    )
+                if output_model is NpcPerformerAgentLlmOutput:
+                    return output_model.model_validate(
+                        {
+                            "intent": "description",
+                            "action_text": "守卫立刻靠近门口，准备应对威胁。",
+                            "routing_hint": None,
+                            "attributes": [],
+                            "against_char_id": [],
+                            "difficulty": None,
+                            "change_basic_goal": None,
+                            "change_active_goal": "调查门口异常",
+                        }
+                    )
+                return super().call_llm_json(
+                    agent_name=agent_name,
+                    system_prompt=system_prompt,
+                    user_payload=user_payload,
+                    output_model=output_model,
+                    retry_budget=retry_budget,
+                    validation_feedback=validation_feedback,
+                )
+
+        engine = Engine(
+            world_state=self.world,
+            mode="phase3",
+            llm_service=RollbackNpcLLMService(always_invalid_state_patch=True),
+        )
+        result = engine.run_turn(
+            raw_input="我走向门口",
+            actor_id="char-player-0000",
+            turn_id=13,
+            trace_id=13001,
+        )
+
+        updated_guard = self.world.get_character("char-guard-0001")
+        self.assertTrue(result["terminated"])
+        self.assertEqual(result["npcperformer"], [])
+        self.assertEqual(result["npc_performer_chain"], [])
+        self.assertEqual(updated_guard.goal.active_goal, "")
+        self.assertIsNone(updated_guard.memory.current_event)
+        self.assertEqual(updated_guard.memory.short, [])
+        self.assertEqual(updated_guard.memory.short_log, [])
+        self.assertEqual(updated_guard.memory.log, [])
 
     def test_description_add_string_is_coerced_by_system(self):
         runtime = StatePatchRuntime(world_state=self.world)

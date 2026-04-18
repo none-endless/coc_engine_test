@@ -12,7 +12,7 @@ from src.data.model.world_state import WorldState
 
 
 class NpcPerformerAgent:
-    """LLM-driven NPC performer with system-side memory and goal maintenance."""
+    """NPC 行为执行代理，负责生成行为结果，并在系统允许时回写目标与记忆。"""
 
     def __init__(
         self,
@@ -27,6 +27,7 @@ class NpcPerformerAgent:
         self.shortlog_turns = max(1, int(shortlog_turns))
 
     def run(self, *, agent_input: NpcPerformerAgentInput) -> NpcPerformerAgentOutput:
+        """仅生成 NPC 行为结果，不在此处直接提交世界副作用。"""
         execution = agent_input.system_input.execution
         npc_id = agent_input.system_input.execution.debug.get("npc_id", agent_input.llm_input.world_info.id)
         llm_output = self.llm_service.call_llm_json(
@@ -45,11 +46,10 @@ class NpcPerformerAgent:
                 id=npc_id,
             ),
         )
-        self._apply_side_effects(agent_input=agent_input, output=output)
         return output
 
-    def _apply_side_effects(self, *, agent_input: NpcPerformerAgentInput, output: NpcPerformerAgentOutput) -> None:
-        """将 performer 结果写回 NPC 的目标系统和短期记忆。"""
+    def apply_side_effects(self, *, agent_input: NpcPerformerAgentInput, output: NpcPerformerAgentOutput) -> None:
+        """在系统确认允许提交后，再把 performer 结果写回 NPC 目标与记忆。"""
         npc_id = output.system_output.id
         store = self.world_state.get_store_copy()
         character = store.characters[npc_id]

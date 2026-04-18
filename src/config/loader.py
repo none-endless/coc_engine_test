@@ -40,6 +40,25 @@ class AgentNarrativeConfig(BaseModel):
     recent_turns: int = Field(default=5)
 
 
+class StorageWorldConfig(BaseModel):
+    """世界真值持久化配置。"""
+
+    sqlite_path: str = Field(default="", description="世界快照 SQLite 文件路径")
+
+
+class StorageNarrativeConfig(BaseModel):
+    """叙事真值持久化配置。"""
+
+    sqlite_path: str = Field(default="", description="叙事真值 SQLite 文件路径")
+
+
+class StorageConfig(BaseModel):
+    """双真值池持久化配置。"""
+
+    world: StorageWorldConfig = Field(default_factory=StorageWorldConfig)
+    narrative: StorageNarrativeConfig = Field(default_factory=StorageNarrativeConfig)
+
+
 class AgentConfig(BaseModel):
     dm: AgentDmConfig = Field(default_factory=AgentDmConfig)
     npc: AgentNpcConfig = Field(default_factory=AgentNpcConfig)
@@ -54,6 +73,7 @@ class EngineConfig(BaseModel):
     llm: LlmConfig = Field(default_factory=LlmConfig)
     system: SystemConfig = Field(default_factory=SystemConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    storage: StorageConfig = Field(default_factory=StorageConfig)
     description: DescriptionConfig = Field(default_factory=DescriptionConfig)
 
 

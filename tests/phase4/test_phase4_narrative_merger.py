@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Dict, Type
 
 from pydantic import BaseModel
@@ -15,17 +17,20 @@ from src.data.model.agent_output import (
 from src.data.model.base import Attribute, CharacterEntity, Description, MapEntity, WorldEntityStore
 from src.data.model.world_state import WorldState
 from src.engine.engine import Engine
+from src.storage.sqlite_world_snapshot_repository import SqliteWorldSnapshotRepository
 
 
 class Phase4FakeLLMService:
     """用于 Phase4 闭环验证的假 LLM 服务。"""
 
-    def __init__(self) -> None:
+    def __init__(self, cli_overrides: Dict[str, Any] | None = None) -> None:
+        overrides = {
+            "agent.narrative.recent_turns": 5,
+            "system.max_retry_count": 1,
+        }
+        overrides.update(cli_overrides or {})
         self.config = ConfigLoader.load(
-            cli_overrides={
-                "agent.narrative.recent_turns": 5,
-                "system.max_retry_count": 1,
-            }
+            cli_overrides=overrides
         )
 
     def call_llm_json(
@@ -91,6 +96,10 @@ class Phase4FakeLLMService:
 
 class TestPhase4NarrativeMerger(unittest.TestCase):
     def setUp(self) -> None:
+        self.temp_dir = TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.world_db_path = str(Path(self.temp_dir.name) / "world_snapshots.sqlite3")
+        self.narrative_db_path = str(Path(self.temp_dir.name) / "narrative_truth.sqlite3")
         room = MapEntity(
             id="map-room-0001",
             name="房间",
@@ -119,8 +128,16 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
             )
         )
 
+    def _build_service(self) -> Phase4FakeLLMService:
+        return Phase4FakeLLMService(
+            cli_overrides={
+                "storage.world.sqlite_path": self.world_db_path,
+                "storage.narrative.sqlite_path": self.narrative_db_path,
+            }
+        )
+
     def test_merger_commits_compact_narrative_into_recent_pool(self):
-        engine = Engine(world_state=self.world, mode="phase3", llm_service=Phase4FakeLLMService())
+        engine = Engine(world_state=self.world, mode="phase3", llm_service=self._build_service())
         result = engine.run_turn(
             raw_input="我走向走廊",
             actor_id="char-player-0000",
@@ -132,6 +149,13 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
         self.assertEqual(result["merger"]["llm_output"]["narrative_str"], "他离开房间，走入了走廊。")
         self.assertEqual(result["narrative_info"]["recent"][-1]["content"], "他离开房间，走入了走廊。")
         self.assertEqual(self.world.get_character("char-player-0000").location, "map-hall-0002")
+        self.assertTrue(result["narrative"]["stream_transport"]["sse"])
+        self.assertTrue(result["narrative"]["stream_transport"]["websocket"])
+        self.assertTrue(Path(self.world_db_path).exists())
+        self.assertTrue(Path(self.narrative_db_path).exists())
+        latest_snapshot = SqliteWorldSnapshotRepository(self.world_db_path).load_latest_snapshot()
+        self.assertIsNotNone(latest_snapshot)
+        self.assertEqual(latest_snapshot["version"], self.world.get_snapshot()["version"])
 
     def test_invisible_evolution_does_not_generate_narrative_or_merger(self):
         class InvisibleLLMService(Phase4FakeLLMService):
@@ -161,7 +185,16 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
                     validation_feedback=validation_feedback,
                 )
 
-        engine = Engine(world_state=self.world, mode="phase3", llm_service=InvisibleLLMService())
+        engine = Engine(
+            world_state=self.world,
+            mode="phase3",
+            llm_service=InvisibleLLMService(
+                cli_overrides={
+                    "storage.world.sqlite_path": self.world_db_path,
+                    "storage.narrative.sqlite_path": self.narrative_db_path,
+                }
+            ),
+        )
         result = engine.run_turn(
             raw_input="我在原地等待",
             actor_id="char-player-0000",
@@ -173,6 +206,19 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
         self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "")
         self.assertIsNotNone(result["merger"])
         self.assertEqual(result["narrative_info"]["recent"][-1]["content"], "他离开房间，走入了走廊。")
+
+    def test_engine_restores_narrative_info_from_independent_sqlite_repository(self):
+        first_engine = Engine(world_state=self.world, mode="phase3", llm_service=self._build_service())
+        first_engine.run_turn(
+            raw_input="我走向走廊",
+            actor_id="char-player-0000",
+            turn_id=4,
+            trace_id=4004,
+        )
+
+        second_engine = Engine(world_state=self.world, mode="phase3", llm_service=self._build_service())
+        self.assertTrue(second_engine._narrative_info.recent)
+        self.assertEqual(second_engine._narrative_info.recent[-1].content, "他离开房间，走入了走廊。")
 
 
 if __name__ == "__main__":

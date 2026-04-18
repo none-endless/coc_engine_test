@@ -36,6 +36,7 @@ class PerformerPipelineFakeLLMService:
             "change_basic_goal": None,
             "change_active_goal": "调查可疑声响",
         }
+        self.payloads: Dict[str, Dict[str, Any]] = {}
 
     def call_llm_json(
         self,
@@ -47,6 +48,7 @@ class PerformerPipelineFakeLLMService:
         retry_budget: int,
         validation_feedback: Any = None,
     ) -> BaseModel:
+        self.payloads[agent_name] = user_payload
         if output_model is DmAgentLlmOutput:
             return output_model.model_validate(
                 {
@@ -140,7 +142,10 @@ class TestPhase5NpcPerformer(unittest.TestCase):
         chain_item = result["npc_performer_chain"][0]
         self.assertEqual(chain_item["npc_id"], "char-guard-0001")
         self.assertIsNone(chain_item["check"])
-        self.assertTrue(chain_item["evolution"]["summary"])
+        self.assertTrue(chain_item["evolution_summary"])
+        self.assertTrue(chain_item["e7"]["narrative_list"])
+        merger_causality = engine.dm_agent.llm_service.payloads["merger"]["e7"]["narrative_causality"]
+        self.assertGreaterEqual(merger_causality.count("'source': 'evolution'"), 2)
 
         updated_guard = self.world.get_character("char-guard-0001")
         self.assertEqual(updated_guard.goal.active_goal, "调查可疑声响")
@@ -182,7 +187,10 @@ class TestPhase5NpcPerformer(unittest.TestCase):
         self.assertIsNotNone(chain_item["check"])
         self.assertEqual(chain_item["check"]["check_type"], "num")
         self.assertEqual(chain_item["check"]["id"], "char-guard-0001")
-        self.assertTrue(chain_item["evolution"]["summary"])
+        self.assertTrue(chain_item["evolution_summary"])
+        merger_payload = engine.dm_agent.llm_service.payloads["merger"]
+        self.assertIn("npc_check", merger_payload["e7"]["narrative_causality"])
+        self.assertIn("char-guard-0001", merger_payload["e7"]["narrative_causality"])
 
 
 if __name__ == "__main__":

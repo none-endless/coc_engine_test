@@ -47,7 +47,15 @@ from src.data.model.agent_input import (
     SystemExecutionMeta,
     SystemRetryControl,
 )
-from src.data.model.agent_output import CocCheckResult, MergerAgentOutput, NarrativeAgentOutput, NpcPerformerAgentOutput, NpcSchedulerAgentOutput, StateAgentOutput
+from src.data.model.agent_output import (
+    CocCheckResult,
+    MergerAgentOutput,
+    NarrativeAgentOutput,
+    NpcPerformerAgentOutput,
+    NpcPerformerChainResult,
+    NpcSchedulerAgentOutput,
+    StateAgentOutput,
+)
 from src.data.model.input.agent_chain_input import (
     DmAgentChainInput,
     E1InputInfo,
@@ -67,9 +75,12 @@ from src.data.model.input.agent_memory_input import DmMemory
 from src.data.model.input.agent_narrative_input import NarrativeInfo
 from src.data.model.world_state import WorldState
 from src.engine.bootstrap_validation import validate_required_dexterity
+from src.interface.narrative_stream_interface import NarrativeStreamInterface
 from src.rule.input_system import InputSystem
 from src.rule.rule_system import RuleSystem
 from src.rule.state_patch import StatePatchError, StatePatchRuntime
+from src.storage.sqlite_narrative_repository import SqliteNarrativeRepository
+from src.storage.sqlite_world_snapshot_repository import SqliteWorldSnapshotRepository
 from src.utils.agent_io_logger import make_io_record
 from src.utils.world_provider import WorldDataProvider
 
@@ -78,7 +89,7 @@ EngineMode = Literal["phase2", "phase3", "phase4"]
 
 
 class Engine:
-    """Unified engine entrypoint for phase2 serial mode and phase3 concurrent mode."""
+    """统一引擎入口，负责 phase2/3/4 的主链路、双真值池和并发分支协调。"""
 
     def __init__(
         self,
@@ -115,6 +126,8 @@ class Engine:
             cfg = ConfigLoader.load(config_path=config_path)
         self.config = cfg
         self._dm_memory = DmMemory(memory_turns=self.config.agent.dm.memory_turns)
+        self._world_snapshot_repository = self._build_world_snapshot_repository()
+        self._narrative_repository = self._build_narrative_repository()
 
         self.state_agent = StateChangeAgent(llm_service=self.dm_agent.llm_service)
         self.npc_scheduler_agent = NpcSchedulerAgent(
@@ -135,6 +148,40 @@ class Engine:
         self.state_patch_runtime = StatePatchRuntime(world_state=self.world_state)
         self._state_commit_lock = asyncio.Lock()
         self._narrative_recent_limit = int(self.config.agent.narrative.recent_turns)
+        self._restore_narrative_info_from_storage()
+        self._persist_world_snapshot()
+
+    def _build_world_snapshot_repository(self) -> Optional[SqliteWorldSnapshotRepository]:
+        """按配置创建世界真值快照仓储；未配置时返回 None。"""
+        sqlite_path = str(getattr(self.config.storage.world, "sqlite_path", "")).strip()
+        if not sqlite_path:
+            return None
+        return SqliteWorldSnapshotRepository(sqlite_path=sqlite_path)
+
+    def _build_narrative_repository(self) -> Optional[SqliteNarrativeRepository]:
+        """按配置创建叙事真值仓储；未配置时返回 None。"""
+        sqlite_path = str(getattr(self.config.storage.narrative, "sqlite_path", "")).strip()
+        if not sqlite_path:
+            return None
+        return SqliteNarrativeRepository(sqlite_path=sqlite_path)
+
+    def _restore_narrative_info_from_storage(self) -> None:
+        """启动时从叙事仓储恢复 NarrativeInfo，保证 narrative truth 可跨进程保留。"""
+        if self._narrative_repository is None:
+            return
+        self._narrative_info = self._narrative_repository.load()
+
+    def _persist_narrative_info(self) -> None:
+        """把当前 NarrativeInfo 同步写入独立 SQLite 仓储。"""
+        if self._narrative_repository is None:
+            return
+        self._narrative_repository.save(self._narrative_info)
+
+    def _persist_world_snapshot(self) -> None:
+        """把当前世界快照写入独立 world snapshot SQLite 仓储。"""
+        if self._world_snapshot_repository is None:
+            return
+        self._world_snapshot_repository.save_snapshot(self.world_state.get_snapshot())
 
     def _dm_handler(self, envelope) -> Dict[str, Any]:
         chain_e1 = E1InputInfo(
@@ -558,6 +605,7 @@ class Engine:
         state_task = asyncio.create_task(self._run_state_branch(state_input, checkpoint, branch_logs))
         narrative_out: Optional[NarrativeAgentOutput] = None
         narrative_stream_events: List[Dict[str, Any]] = []
+        narrative_stream_transport: Dict[str, List[Any]] = {"sse": [], "websocket": []}
         if evolution_result.visible_to_player:
             narrative_input = NarrativeAgentInput(
                 identity=AgentIdentity(id="narrative", skill="generate narrative draft"),
@@ -580,19 +628,27 @@ class Engine:
             narrative_task = asyncio.create_task(self._run_narrative_branch(narrative_input, branch_logs))
             scheduler_out, state_out, narrative_out = await asyncio.gather(scheduler_task, state_task, narrative_task)
             narrative_stream_events = self.narrative_agent.build_stream_events(narrative_out)
+            narrative_stream_transport = NarrativeStreamInterface.build_transport_payload(narrative_stream_events)
         else:
             scheduler_out, state_out = await asyncio.gather(scheduler_task, state_task)
 
-        performer_out, performer_chain = await self._run_performer_branch(
-            scheduler_out=scheduler_out,
-            source_actor_id=actor_id,
-            turn_id=turn_id,
-            trace_id=trace_id,
-            world_version=prepared["world_version"],
-            branch_logs=branch_logs,
-        )
-
         fallback_error = state_out.get("fallback_error")
+        performer_out: List[NpcPerformerAgentOutput] = []
+        performer_chain: List[NpcPerformerChainResult] = []
+        if fallback_error is None:
+            performer_out, performer_chain = await self._run_performer_branch(
+                scheduler_out=scheduler_out,
+                source_actor_id=actor_id,
+                turn_id=turn_id,
+                trace_id=trace_id,
+                world_version=prepared["world_version"],
+                branch_logs=branch_logs,
+            )
+            merger_chain = self._merge_e7_chains(
+                base_chain=merger_chain,
+                extra_chains=[chain_item.e7 for chain_item in performer_chain],
+            )
+
         merger_payload = None
         if narrative_out is None:
             narrative_payload = {
@@ -601,10 +657,12 @@ class Engine:
                 },
                 "system_output": {},
                 "stream_events": [],
+                "stream_transport": {"sse": [], "websocket": []},
             }
         else:
             narrative_payload = narrative_out.model_dump(mode="json")
             narrative_payload["stream_events"] = narrative_stream_events
+            narrative_payload["stream_transport"] = narrative_stream_transport
         if fallback_error is not None:
             narrative_payload = {
                 "llm_output": {
@@ -612,6 +670,7 @@ class Engine:
                 },
                 "system_output": narrative_payload.get("system_output", {}),
                 "stream_events": [],
+                "stream_transport": {"sse": [], "websocket": []},
             }
         else:
             narrative_text = narrative_out.llm_output.narrative_str if narrative_out is not None else ""
@@ -636,6 +695,7 @@ class Engine:
                     content=narrative_text,
                     source="narrative_agent",
                 )
+            self._persist_narrative_info()
 
         event = {
             "route": "phase3_concurrent_nl",
@@ -646,7 +706,7 @@ class Engine:
             "evolution": evolution_result.model_dump(mode="json"),
             "npcscheduler": scheduler_out.model_dump(mode="json"),
             "npcperformer": [item.model_dump(mode="json") for item in performer_out],
-            "npc_performer_chain": performer_chain,
+            "npc_performer_chain": [item.model_dump(mode="json") for item in performer_chain],
             "state": state_out,
             "narrative": narrative_payload,
             "merger": merger_payload,
@@ -734,9 +794,18 @@ class Engine:
 
     @staticmethod
     def _stringify_e7(chain: E7CausalityChain) -> str:
+        """把结构化 e7 压平成提示词侧可消费的简短字符串。"""
         if not chain.narrative_list:
             return ""
         return " | ".join(str(entry) for entry in chain.narrative_list)
+
+    @staticmethod
+    def _merge_e7_chains(*, base_chain: E7CausalityChain, extra_chains: List[E7CausalityChain]) -> E7CausalityChain:
+        """把多个分支因果链合并回主 e7，保持顺序并避免直接修改入参。"""
+        merged_chain = base_chain.model_copy(deep=True)
+        for chain in extra_chains:
+            merged_chain.narrative_list.extend(chain.model_copy(deep=True).narrative_list)
+        return merged_chain
 
     async def _run_scheduler_branch(
         self,
@@ -779,13 +848,14 @@ class Engine:
         trace_id: int,
         world_version: int,
         branch_logs: List[Dict[str, Any]],
-    ) -> Tuple[List[NpcPerformerAgentOutput], List[Dict[str, Any]]]:
+    ) -> Tuple[List[NpcPerformerAgentOutput], List[NpcPerformerChainResult]]:
+        """执行 NPC performer，并在 state 成功后统一提交 NPC 目标与记忆副作用。"""
         scheduled_npc_ids = scheduler_out.llm_output.step_result.scheduled_npc_ids
         if not scheduled_npc_ids:
             return [], []
 
         outputs: List[NpcPerformerAgentOutput] = []
-        downstream_chain: List[Dict[str, Any]] = []
+        downstream_chain: List[NpcPerformerChainResult] = []
         started = time.perf_counter()
         started_at = datetime.now(timezone.utc).isoformat()
 
@@ -839,6 +909,11 @@ class Engine:
                 world_version,
             )
             downstream_chain.append(chain_result)
+            await asyncio.to_thread(
+                self.npc_performer_agent.apply_side_effects,
+                agent_input=npc_input,
+                output=output,
+            )
             self._record_io(
                 kind="agent_io",
                 agent_name="npc_performer",
@@ -873,8 +948,8 @@ class Engine:
         turn_id: int,
         trace_id: int,
         world_version: int,
-    ) -> Dict[str, Any]:
-        """执行 NPC performer 的下游链路：可选鉴定 + evolution。"""
+    ) -> NpcPerformerChainResult:
+        """执行 NPC performer 的下游链路，并生成可并回主 e7 的结构化结果。"""
         llm_output = performer_output.llm_output
         check_result: Optional[CocCheckResult] = None
         check_error: Optional[str] = None
@@ -934,6 +1009,40 @@ class Engine:
             ),
         )
         evolution_result = self.evolution_agent.evolve(agent_input=evo_input, causality_chain=None)
+        chain_projection = E7CausalityChain()
+        if check_result is not None:
+            chain_projection.narrative_list.append(
+                {
+                    "source": "npc_check",
+                    "trace_id": str(trace_id),
+                    "turn_id": str(turn_id),
+                    "npc_id": npc_id,
+                    "content": (
+                        f"NPC {npc_id} 发起 {check_result.check_type} 鉴定，"
+                        f"属性={check_result.attribute}，结果={check_result.result_type}"
+                    ),
+                }
+            )
+        elif check_error is not None:
+            chain_projection.narrative_list.append(
+                {
+                    "source": "npc_check_error",
+                    "trace_id": str(trace_id),
+                    "turn_id": str(turn_id),
+                    "npc_id": npc_id,
+                    "content": f"NPC {npc_id} 鉴定链路失败：{check_error}",
+                }
+            )
+        chain_projection.narrative_list.extend(evolution_result.e7.model_copy(deep=True).narrative_list)
+        chain_result = NpcPerformerChainResult(
+            npc_id=npc_id,
+            intent=llm_output.intent,
+            check=check_result,
+            check_error=check_error,
+            evolution_summary=evolution_result.summary,
+            evolution_visible_to_player=evolution_result.visible_to_player,
+            e7=chain_projection,
+        )
         self._record_io(
             kind="agent_io",
             agent_name="npc_performer_chain",
@@ -946,6 +1055,7 @@ class Engine:
                 "check": check_result.model_dump(mode="json") if check_result is not None else None,
                 "check_error": check_error,
                 "evolution": evolution_result.model_dump(mode="json"),
+                "e7": chain_projection.model_dump(mode="json"),
             },
             extra={
                 "branch": "npc_performer_chain",
@@ -954,13 +1064,7 @@ class Engine:
                 "npc_id": npc_id,
             },
         )
-        return {
-            "npc_id": npc_id,
-            "intent": llm_output.intent,
-            "check": check_result.model_dump(mode="json") if check_result is not None else None,
-            "check_error": check_error,
-            "evolution": evolution_result.model_dump(mode="json"),
-        }
+        return chain_result
 
     def _run_npc_check(self, *, actor_id: str, performer_output: NpcPerformerAgentOutput) -> Optional[CocCheckResult]:
         """按 performer 输出执行 NPC 鉴定；无鉴定需求时返回 None。"""
@@ -1170,6 +1274,7 @@ class Engine:
                         "duration_ms": round((ended - started) * 1000, 3),
                     }
                 )
+                self._persist_world_snapshot()
                 return {
                     "ok": True,
                     "retry_count": retry_seq,
@@ -1217,6 +1322,7 @@ class Engine:
 
         async with self._state_commit_lock:
             await asyncio.to_thread(self.world_state.restore_checkpoint, checkpoint)
+        self._persist_world_snapshot()
 
         fallback = FallbackError(
             code="STATE_PATCH_RETRY_EXHAUSTED",

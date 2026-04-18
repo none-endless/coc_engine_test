@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from .agent_input import E1LlmView, E4EvolutionLlmView, E4SchedulerLlmView
-from .input.agent_chain_input import E2IntentInfo
+from .input.agent_chain_input import E2IntentInfo, E7CausalityChain
 
 
 class AgentLlmOutputBase(BaseModel):
@@ -226,6 +226,18 @@ class NpcPerformerAgentSystemOutput(TurnTraceSystemOutputBase):
 class NpcPerformerAgentOutput(AgentOutputEnvelope):
     llm_output: NpcPerformerAgentLlmOutput = Field(description="LLM 输出")
     system_output: NpcPerformerAgentSystemOutput = Field(description="系统输出")
+
+
+class NpcPerformerChainResult(BaseModel):
+    """NPC performer 下游链路结果，用于把鉴定与演化结果接回主因果链。"""
+
+    npc_id: str = Field(default="", description="触发本次下游链路的 NPC ID")
+    intent: str = Field(default="", description="NPC 本次行为意图")
+    check: Optional[CocCheckResult] = Field(default=None, description="可选的规则鉴定结果")
+    check_error: Optional[str] = Field(default=None, description="鉴定执行失败时的错误信息")
+    evolution_summary: str = Field(default="", description="NPC 下游演化摘要")
+    evolution_visible_to_player: bool = Field(default=True, description="该演化是否对玩家可见")
+    e7: E7CausalityChain = Field(default_factory=E7CausalityChain, description="NPC 下游并回主链前的因果链投影")
 
 
 class TurnAgentOutputs(BaseModel):
