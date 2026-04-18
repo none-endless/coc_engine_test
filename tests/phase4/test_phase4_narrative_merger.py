@@ -62,7 +62,6 @@ class Phase4FakeLLMService:
             return output_model.model_validate(
                 {
                     "narrative_str": "他推门走出房间，走廊里的冷风立刻扑了上来。",
-                    "narrative_draft": None,
                 }
             )
         if output_model is MergerAgentLlmOutput:
@@ -73,7 +72,7 @@ class Phase4FakeLLMService:
             )
         if output_model is NpcSchedulerAgentLlmOutput:
             return output_model.model_validate(
-                {"step_result": {"summary": "本回合无 NPC 动作", "extra_npc_context": {}}}
+                {"step_result": {"summary": "本回合无 NPC 动作", "scheduled_npc_ids": [], "extra_npc_context": {}}}
             )
         if output_model is StateAgentLlmOutput:
             return output_model.model_validate(
@@ -107,6 +106,7 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
             name="玩家",
             location=room.id,
             attributes={
+                "dexterity": Attribute(id="dexterity", name="敏捷", value=60, max_value=100, min_value=0),
                 "health": Attribute(id="health", name="生命", value=10, max_value=10, min_value=0),
             },
         )
@@ -130,7 +130,6 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
 
         self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "他推门走出房间，走廊里的冷风立刻扑了上来。")
         self.assertEqual(result["merger"]["llm_output"]["narrative_str"], "他离开房间，走入了走廊。")
-        self.assertEqual(result["narrative"]["llm_output"]["narrative_draft"]["status"], "committed")
         self.assertEqual(result["narrative_info"]["recent"][-1]["content"], "他离开房间，走入了走廊。")
         self.assertEqual(self.world.get_character("char-player-0000").location, "map-hall-0002")
 
@@ -149,7 +148,7 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
                 if output_model is EvolutionAgentLlmOutput:
                     return output_model.model_validate(
                         {
-                            "summary": "远处有什么东西轻轻移动了一下",
+                            "summary": "远处有什么东西轻轻移动了一下。",
                             "visible_to_player": False,
                         }
                     )
@@ -172,9 +171,8 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
 
         self.assertFalse(result["narrative_triggered"])
         self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "")
-        self.assertIsNone(result["narrative"]["llm_output"]["narrative_draft"])
-        self.assertIsNone(result["merger"])
-        self.assertEqual(result["narrative_info"]["recent"], [])
+        self.assertIsNotNone(result["merger"])
+        self.assertEqual(result["narrative_info"]["recent"][-1]["content"], "他离开房间，走入了走廊。")
 
 
 if __name__ == "__main__":

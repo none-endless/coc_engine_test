@@ -6,7 +6,14 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from src.config.loader import ConfigLoader
-from src.data.model.agent_output import DmAgentLlmOutput, EvolutionAgentLlmOutput, NarrativeAgentLlmOutput, NpcSchedulerAgentLlmOutput, StateAgentLlmOutput
+from src.data.model.agent_output import (
+    DmAgentLlmOutput,
+    EvolutionAgentLlmOutput,
+    MergerAgentLlmOutput,
+    NarrativeAgentLlmOutput,
+    NpcSchedulerAgentLlmOutput,
+    StateAgentLlmOutput,
+)
 from src.data.model.base import Attribute, CharacterEntity, Description, MapEntity, WorldEntityStore
 from src.data.model.world_state import WorldState
 from src.engine.engine import Engine
@@ -56,6 +63,7 @@ class FakeLLMService:
                 {
                     "step_result": {
                         "summary": "无 NPC 激活",
+                        "scheduled_npc_ids": [],
                         "extra_npc_context": {},
                     }
                 }
@@ -65,7 +73,13 @@ class FakeLLMService:
             return output_model.model_validate(
                 {
                     "narrative_str": "你迈步离开房间，走廊的冷风迎面而来。",
-                    "narrative_draft": None,
+                }
+            )
+
+        if output_model is MergerAgentLlmOutput:
+            return output_model.model_validate(
+                {
+                    "narrative_str": "你离开房间，走进了走廊。",
                 }
             )
 
@@ -102,6 +116,7 @@ class TestAgentIoLogging(unittest.TestCase):
             name="玩家",
             location=room.id,
             attributes={
+                "dexterity": Attribute(id="dexterity", name="敏捷", value=80, max_value=100, min_value=0),
                 "health": Attribute(id="health", name="生命", value=10, max_value=10, min_value=0),
             },
         )
@@ -131,7 +146,7 @@ class TestAgentIoLogging(unittest.TestCase):
 
             records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
             agent_names = {record.get("agent_name") for record in records if record.get("kind") == "agent_io"}
-            self.assertTrue({"dmagent", "evolution", "npc_scheduler", "narrative", "state_change"}.issubset(agent_names))
+            self.assertTrue({"dmagent", "evolution", "npc_scheduler", "narrative", "merger", "state_change"}.issubset(agent_names))
             turn_kinds = [record for record in records if record.get("kind") == "turn_result"]
             self.assertTrue(turn_kinds)
 

@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field
 
 from .agent_input import E1LlmView, E4EvolutionLlmView, E4SchedulerLlmView
 from .input.agent_chain_input import E2IntentInfo
-from .narrative import NarrativeDraft
 
 
 class AgentLlmOutputBase(BaseModel):
@@ -77,7 +76,6 @@ class NarrativeAgentLlmOutput(AgentLlmOutputBase):
     """narrative_agent 的 LLM 输出。"""
 
     narrative_str: str = Field(default="", description="叙事文本")
-    narrative_draft: Optional[NarrativeDraft] = Field(default=None, description="结构化叙事草稿")
 
 
 class NarrativeAgentSystemOutput(TurnTraceSystemOutputBase):
@@ -187,6 +185,7 @@ class NpcSchedulerStepResultOutput(BaseModel):
     """npc_scheduler 步骤结果输出。"""
 
     summary: str = Field(default="", description="来自 evolution 的步骤摘要")
+    scheduled_npc_ids: List[str] = Field(default_factory=list, description="本回合实际进入调度的 NPC ID 顺序列表")
     extra_npc_context: Dict[str, Optional[str]] = Field(default_factory=dict, description="scheduler 给 performer 的额外上下文")
 
 

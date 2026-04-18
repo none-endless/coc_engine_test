@@ -11,13 +11,13 @@ from src.data.model.agent_output import (
 
 
 class MergerAgent:
-    """负责将 narrative 草稿压缩为可提交的叙事真值。"""
+    """负责将回合因果链压缩为可提交的叙事真值。"""
 
     def __init__(self, llm_service: LLMServiceBase) -> None:
         self.llm_service = llm_service
 
     def run(self, *, agent_input: MergerAgentInput) -> MergerAgentOutput:
-        """消费 e7 与 NarrativeDraft，输出合并后的精简叙事。"""
+        """消费 e7（及可选 narrative 文本），输出合并后的精简叙事。"""
         execution = agent_input.system_input.execution
         llm_output = self.llm_service.call_llm_json(
             agent_name="merger",
@@ -29,7 +29,10 @@ class MergerAgent:
         )
 
         if not llm_output.narrative_str.strip():
-            llm_output.narrative_str = agent_input.llm_input.narrative_draft.content
+            if agent_input.llm_input.narrative_str.strip():
+                llm_output.narrative_str = agent_input.llm_input.narrative_str
+            else:
+                llm_output.narrative_str = agent_input.llm_input.e7.narrative_causality
 
         return MergerAgentOutput(
             llm_output=llm_output,

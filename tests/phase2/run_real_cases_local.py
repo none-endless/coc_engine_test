@@ -5,8 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
-from src.config.loader import ConfigLoader
 from src.agent.llm.service import LLMServiceBase
+from src.config.loader import ConfigLoader
 from src.data.model.base import Attribute, CharacterEntity, Description, MapEntity, WorldEntityStore
 from src.data.model.world_state import WorldState
 from src.engine.engine import Engine
@@ -14,7 +14,6 @@ from src.engine.engine import Engine
 
 def _build_engine() -> Engine:
     cfg = ConfigLoader.load(config_path="config/config.yaml")
-    # Keep real call but avoid oversized output and timeout too low.
     cfg.llm.max_tokens = min(int(cfg.llm.max_tokens), 1024)
     cfg.llm.timeout = max(int(cfg.llm.timeout), 120)
 
@@ -30,6 +29,7 @@ def _build_engine() -> Engine:
         name="玩家",
         location=room.id,
         attributes={
+            "dexterity": Attribute(id="dexterity", name="敏捷", value=70, max_value=100, min_value=0),
             "fight": Attribute(id="fight", name="格斗", value=60, max_value=100, min_value=0),
             "investigation": Attribute(id="investigation", name="侦查", value=55, max_value=100, min_value=0),
             "stealth": Attribute(id="stealth", name="潜行", value=45, max_value=100, min_value=0),
@@ -39,7 +39,10 @@ def _build_engine() -> Engine:
         id="char-guard-0001",
         name="守卫",
         location=room.id,
-        attributes={"fight": Attribute(id="fight", name="格斗", value=50, max_value=100, min_value=0)},
+        attributes={
+            "dexterity": Attribute(id="dexterity", name="敏捷", value=50, max_value=100, min_value=0),
+            "fight": Attribute(id="fight", name="格斗", value=50, max_value=100, min_value=0),
+        },
     )
 
     world = WorldState()

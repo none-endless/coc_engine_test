@@ -18,6 +18,7 @@ def main() -> None:
         name="玩家",
         location=room.id,
         attributes={
+            "dexterity": Attribute(id="dexterity", name="敏捷", value=70, max_value=100, min_value=0),
             "fight": Attribute(id="fight", name="格斗", value=60, max_value=100, min_value=0),
             "investigation": Attribute(id="investigation", name="侦查", value=55, max_value=100, min_value=0),
             "stealth": Attribute(id="stealth", name="潜行", value=45, max_value=100, min_value=0),
@@ -27,7 +28,10 @@ def main() -> None:
         id="char-guard-0001",
         name="守卫",
         location=room.id,
-        attributes={"fight": Attribute(id="fight", name="格斗", value=50, max_value=100, min_value=0)},
+        attributes={
+            "dexterity": Attribute(id="dexterity", name="敏捷", value=50, max_value=100, min_value=0),
+            "fight": Attribute(id="fight", name="格斗", value=50, max_value=100, min_value=0),
+        },
     )
 
     world = WorldState()

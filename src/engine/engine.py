@@ -9,6 +9,7 @@ from src.agent.llm.evolution_agent import EvolutionAgent, EvolutionResult
 from src.agent.llm.input_agent import DMAgent, DmAnalyzeResult
 from src.agent.llm.merger_agent import MergerAgent
 from src.agent.llm.narrative_agent import NarrativeAgent
+from src.agent.llm.npc_perform_agent import NpcPerformerAgent
 from src.agent.llm.npc_schedul_agent import NpcSchedulerAgent
 from src.agent.llm.service import LLMServiceBase
 from src.agent.llm.statechange_agent import StateChangeAgent
@@ -33,6 +34,9 @@ from src.data.model.agent_input import (
     NarrativeAgentInput,
     NarrativeAgentLlmInput,
     NarrativeAgentSystemInput,
+    NpcPerformerAgentInput,
+    NpcPerformerAgentLlmInput,
+    NpcPerformerAgentSystemInput,
     NpcSchedulerAgentInput,
     NpcSchedulerAgentLlmInput,
     NpcSchedulerAgentSystemInput,
@@ -43,24 +47,26 @@ from src.data.model.agent_input import (
     SystemExecutionMeta,
     SystemRetryControl,
 )
-from src.data.model.agent_output import CocCheckResult, MergerAgentOutput, NarrativeAgentOutput, NpcSchedulerAgentOutput, StateAgentOutput
+from src.data.model.agent_output import CocCheckResult, MergerAgentOutput, NarrativeAgentOutput, NpcPerformerAgentOutput, NpcSchedulerAgentOutput, StateAgentOutput
 from src.data.model.input.agent_chain_input import (
     DmAgentChainInput,
     E1InputInfo,
     E3RuleResult,
     E4EvolutionStepResult,
+    E4SchedulerStepResult,
     E7CausalityChain,
     EvolutionAgentChainInput,
     FallbackError,
     MergerAgentChainInput,
     NarrativeAgentChainInput,
+    NpcPerformerAgentChainInput,
     NpcSchedulerAgentChainInput,
     StateChangeAgentChainInput,
 )
 from src.data.model.input.agent_memory_input import DmMemory
 from src.data.model.input.agent_narrative_input import NarrativeInfo
-from src.data.model.narrative import NarrativeDraftStatus
 from src.data.model.world_state import WorldState
+from src.engine.bootstrap_validation import validate_required_dexterity
 from src.rule.input_system import InputSystem
 from src.rule.rule_system import RuleSystem
 from src.rule.state_patch import StatePatchError, StatePatchRuntime
@@ -84,6 +90,7 @@ class Engine:
         config_path: str = "config/config.yaml",
     ) -> None:
         self.world_state = world_state
+        validate_required_dexterity(world_state)
         self.mode = mode
         self.rule_system = RuleSystem(world_state=world_state)
         self.world_provider = WorldDataProvider(world_state=world_state)
@@ -110,7 +117,18 @@ class Engine:
         self._dm_memory = DmMemory(memory_turns=self.config.agent.dm.memory_turns)
 
         self.state_agent = StateChangeAgent(llm_service=self.dm_agent.llm_service)
-        self.npc_scheduler_agent = NpcSchedulerAgent(llm_service=self.dm_agent.llm_service)
+        self.npc_scheduler_agent = NpcSchedulerAgent(
+            llm_service=self.dm_agent.llm_service,
+            world_state=self.world_state,
+            max_actions_per_turn=int(self.config.agent.npc.max_actions_per_turn),
+            cooldown_turns=int(self.config.agent.npc.cooldown_turns),
+        )
+        self.npc_performer_agent = NpcPerformerAgent(
+            llm_service=self.dm_agent.llm_service,
+            world_state=self.world_state,
+            memory_turns=int(self.config.agent.npc.memory_turns),
+            shortlog_turns=int(self.config.agent.npc.shortlog_turns),
+        )
         self.narrative_agent = NarrativeAgent(llm_service=self.dm_agent.llm_service)
         self.merger_agent = MergerAgent(llm_service=self.dm_agent.llm_service)
 
@@ -489,6 +507,7 @@ class Engine:
         evolution_result = context["evolution_result"]
         e4 = E4EvolutionLlmView(summary=evolution_result.summary)
         e4_chain = E4EvolutionStepResult(summary=evolution_result.summary)
+        merger_chain = evolution_result.e7.model_copy(deep=True)
         checkpoint = self.world_state.capture_checkpoint()
 
         scheduler_input = NpcSchedulerAgentInput(
@@ -563,13 +582,21 @@ class Engine:
         else:
             scheduler_out, state_out = await asyncio.gather(scheduler_task, state_task)
 
+        performer_out = await self._run_performer_branch(
+            scheduler_out=scheduler_out,
+            source_actor_id=actor_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            world_version=prepared["world_version"],
+            branch_logs=branch_logs,
+        )
+
         fallback_error = state_out.get("fallback_error")
         merger_payload = None
         if narrative_out is None:
             narrative_payload = {
                 "llm_output": {
                     "narrative_str": "",
-                    "narrative_draft": None,
                 },
                 "system_output": {},
                 "stream_events": [],
@@ -578,39 +605,36 @@ class Engine:
             narrative_payload = narrative_out.model_dump(mode="json")
             narrative_payload["stream_events"] = narrative_stream_events
         if fallback_error is not None:
-            if narrative_out is not None and narrative_out.llm_output.narrative_draft is not None:
-                narrative_payload["llm_output"]["narrative_draft"]["status"] = "discarded"
-                narrative_out.llm_output.narrative_draft.status = NarrativeDraftStatus.DISCARDED
             narrative_payload = {
                 "llm_output": {
                     "narrative_str": "",
-                    "narrative_draft": None,
                 },
                 "system_output": narrative_payload.get("system_output", {}),
                 "stream_events": [],
             }
-        elif narrative_out is not None and narrative_out.llm_output.narrative_draft is not None:
+        else:
+            narrative_text = narrative_out.llm_output.narrative_str if narrative_out is not None else ""
             merger_out = await self._run_merger_branch(
                 context=context,
                 routed=routed,
                 prepared=prepared,
                 branch_logs=branch_logs,
-                narrative_out=narrative_out,
+                causality_chain=merger_chain,
+                narrative_str=narrative_text,
             )
             merger_payload = merger_out.model_dump(mode="json")
-            narrative_out.llm_output.narrative_draft.status = NarrativeDraftStatus.COMMITTED
-            narrative_payload["llm_output"]["narrative_draft"] = narrative_out.llm_output.narrative_draft.model_dump(mode="json")
             self._narrative_info.add_narrative(
                 turn=turn_id,
                 content=merger_out.llm_output.narrative_str,
                 source="merger_agent",
                 max_recent=self._narrative_recent_limit,
             )
-            self._narrative_info.append_log(
-                turn=turn_id,
-                content=narrative_out.llm_output.narrative_draft.content,
-                source="narrative_agent",
-            )
+            if narrative_text.strip():
+                self._narrative_info.append_log(
+                    turn=turn_id,
+                    content=narrative_text,
+                    source="narrative_agent",
+                )
 
         event = {
             "route": "phase3_concurrent_nl",
@@ -620,6 +644,7 @@ class Engine:
             "e3": context["e3_result"].model_dump(mode="json"),
             "evolution": evolution_result.model_dump(mode="json"),
             "npcscheduler": scheduler_out.model_dump(mode="json"),
+            "npcperformer": [item.model_dump(mode="json") for item in performer_out],
             "state": state_out,
             "narrative": narrative_payload,
             "merger": merger_payload,
@@ -743,6 +768,90 @@ class Engine:
         )
         return output
 
+    async def _run_performer_branch(
+        self,
+        *,
+        scheduler_out: NpcSchedulerAgentOutput,
+        source_actor_id: str,
+        turn_id: int,
+        trace_id: int,
+        world_version: int,
+        branch_logs: List[Dict[str, Any]],
+    ) -> List[NpcPerformerAgentOutput]:
+        scheduled_npc_ids = scheduler_out.llm_output.step_result.scheduled_npc_ids
+        if not scheduled_npc_ids:
+            return []
+
+        outputs: List[NpcPerformerAgentOutput] = []
+        started = time.perf_counter()
+        started_at = datetime.now(timezone.utc).isoformat()
+
+        for npc_id in scheduled_npc_ids:
+            npc_input = NpcPerformerAgentInput(
+                identity=AgentIdentity(id="npcperformer", skill="execute npc behavior"),
+                llm_input=NpcPerformerAgentLlmInput(
+                    e4={
+                        "scheduled_npc_ids": scheduled_npc_ids,
+                        "extra_npc_context": scheduler_out.llm_output.step_result.extra_npc_context,
+                    },
+                    e1=E1LlmView(
+                        raw_text=scheduler_out.llm_output.step_result.summary,
+                        source_id=source_actor_id,
+                    ),
+                    world_info=self.world_provider.get_npc_view(npc_id),
+                    agent_memory=self.world_state.get_character(npc_id).memory,
+                ),
+                system_input=NpcPerformerAgentSystemInput(
+                    chain_raw=NpcPerformerAgentChainInput(
+                        e4=E4SchedulerStepResult(
+                            scheduled_npc_ids=scheduled_npc_ids,
+                            extra_npc_context=scheduler_out.llm_output.step_result.extra_npc_context,
+                        ),
+                        e1=E1InputInfo(
+                            turn_id=turn_id,
+                            trace_id=trace_id,
+                            world_version=world_version,
+                            source_id=source_actor_id,
+                            raw_text=scheduler_out.llm_output.step_result.summary,
+                            metadata={"branch": "npc_performer"},
+                        ),
+                    ),
+                    execution=SystemExecutionMeta(
+                        turn_id=turn_id,
+                        trace_id=trace_id,
+                        world_version=world_version,
+                        debug={"branch": "npc_performer", "npc_id": npc_id},
+                    ),
+                ),
+            )
+            output = await asyncio.to_thread(self.npc_performer_agent.run, agent_input=npc_input)
+            outputs.append(output)
+            self._record_io(
+                kind="agent_io",
+                agent_name="npc_performer",
+                input_data=npc_input,
+                output_data=output,
+                extra={
+                    "branch": "npc_performer",
+                    "turn_id": turn_id,
+                    "trace_id": trace_id,
+                    "npc_id": npc_id,
+                },
+            )
+
+        ended = time.perf_counter()
+        branch_logs.append(
+            {
+                "branch": "npc_performer",
+                "turn_id": turn_id,
+                "trace_id": trace_id,
+                "started_at": started_at,
+                "duration_ms": round((ended - started) * 1000, 3),
+                "npc_ids": list(scheduled_npc_ids),
+            }
+        )
+        return outputs
+
     async def _run_narrative_branch(
         self,
         agent_input: NarrativeAgentInput,
@@ -782,24 +891,21 @@ class Engine:
         routed,
         prepared: Dict[str, Any],
         branch_logs: List[Dict[str, Any]],
-        narrative_out: NarrativeAgentOutput,
+        causality_chain: E7CausalityChain,
+        narrative_str: str,
     ) -> MergerAgentOutput:
-        """在状态提交成功后合并叙事草稿并写入叙事真值池。"""
+        """在状态提交成功后合并回合因果链并写入叙事真值池。"""
         started = time.perf_counter()
         started_at = datetime.now(timezone.utc).isoformat()
-        draft = narrative_out.llm_output.narrative_draft
-        if draft is None:
-            raise ValueError("merger branch requires narrative draft")
-
-        causality_chain = context["e7_input"].model_copy(deep=True)
-        causality_chain.narrative_list.append(
-            {
-                "trace_id": str(draft.trace_id),
-                "turn_id": str(draft.turn_id),
-                "draft_id": draft.draft_id,
-                "content": draft.content,
-            }
-        )
+        if narrative_str.strip():
+            causality_chain.narrative_list.append(
+                {
+                    "source": "narrative",
+                    "trace_id": str(context["evolution_result"].trace_id),
+                    "turn_id": str(context["evolution_result"].turn_id),
+                    "content": narrative_str,
+                }
+            )
 
         merger_input = MergerAgentInput(
             identity=AgentIdentity(id="merger", skill="merge committed narrative"),
@@ -807,16 +913,15 @@ class Engine:
                 e7=E7LlmView(narrative_causality=self._stringify_e7(causality_chain)),
                 world_info=context["views"].narrative_view,
                 narrative_info=self._narrative_info,
-                narrative_draft=draft,
+                narrative_str=narrative_str,
             ),
             system_input=MergerAgentSystemInput(
                 chain_raw=MergerAgentChainInput(
                     e7=causality_chain,
-                    narrative_draft=draft,
                 ),
                 execution=SystemExecutionMeta(
-                    turn_id=draft.turn_id,
-                    trace_id=draft.trace_id,
+                    turn_id=context["evolution_result"].turn_id,
+                    trace_id=context["evolution_result"].trace_id,
                     world_version=prepared["world_version"],
                     event_id=routed.envelope.event_id,
                     debug={"branch": "merger"},

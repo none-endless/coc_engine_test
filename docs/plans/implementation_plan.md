@@ -102,7 +102,7 @@
 3.  **容错与回滚机制**：
     -   状态变更失败触发 **自动重试**（LLM 修正指令）。
     -   超过 `max_retry_count` 或超时：**执行回滚**（恢复至回合开始快照）。
-    -   **降级处理**：丢弃本次 `NarrativeDraft`，输出 `fallback_error`，终止交互。
+    -   **降级处理**：丢弃本次叙事分支输出，输出 `fallback_error`，终止交互。
 
 #### 验收需求
 -   并发任务必须携带相同的 `turn_id`。
@@ -122,10 +122,10 @@
 
 #### 需要做什么
 1.  **NarrativeAgent 实现**：
-    -   消费 `ShortSummary` 生成自然语言片段（`NarrativeDraft`）。
+    -   消费 `ShortSummary` 生成自然语言片段（`narrative_str`）。
     -   **流式输出**：支持 SSE 或 WebSocket 推送叙事内容给前端。
 2.  **MergerAgent 实现**：
-    -   消费 `回合因果链 (e7)` 和 `NarrativeDraft`。
+    -   消费 `回合因果链 (e7)` 和可选 `narrative_str`。
     -   执行去重、简化、合并，生成 **叙事真值** 写入 `叙事信息.recent`。
 3.  **真值池隔离**：
     -   `WorldInfo` (StateChangeAgent 维护) 与 `NarrativeInfo` (MergerAgent 维护) 物理隔离存储。

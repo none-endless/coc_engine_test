@@ -66,6 +66,14 @@
         "basic_info": "",
         "location": "map-room-0001",
         "attributes": {
+          "dexterity": {
+            "id": "dexterity",
+            "name": "敏捷",
+            "value": 55,
+            "max_value": 100,
+            "min_value": 0,
+            "description": "行动先后顺序的核心属性"
+          },
           "fight": {
             "id": "fight",
             "name": "格斗",
@@ -100,6 +108,14 @@
         "basic_info": "值班室附近的普通守卫。",
         "location": "map-room-0001",
         "attributes": {
+          "dexterity": {
+            "id": "dexterity",
+            "name": "敏捷",
+            "value": 40,
+            "max_value": 100,
+            "min_value": 0,
+            "description": "行动先后顺序的核心属性"
+          },
           "fight": {
             "id": "fight",
             "name": "格斗",

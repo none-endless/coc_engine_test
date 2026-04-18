@@ -35,7 +35,6 @@ from .input.agent_map_intput import (
 )
 from .input.agent_memory_input import DmMemory
 from .input.agent_narrative_input import NarrativeInfo
-from .narrative import NarrativeDraft
 
 
 class AgentIdentity(BaseModel):
@@ -86,6 +85,7 @@ class E4EvolutionLlmView(BaseModel):
 class E4SchedulerLlmView(BaseModel):
     """e4 的 LLM 精简视图，来自 scheduler。"""
 
+    scheduled_npc_ids: list[str] = Field(default_factory=list, description="本回合实际进入调度的 NPC ID 顺序列表")
     extra_npc_context: Dict[str, Optional[str]] = Field(default_factory=dict, description="scheduler 给 performer 的额外上下文")
 
 
@@ -256,7 +256,7 @@ class MergerAgentLlmInput(BaseModel):
     e7: E7LlmView = Field(description="链路输入（e7 精简）")
     world_info: NarrativeWorldView = Field(description="世界信息（切片）")
     narrative_info: NarrativeInfo = Field(description="叙事信息")
-    narrative_draft: NarrativeDraft = Field(description="待提交的叙事草稿")
+    narrative_str: str = Field(default="", description="narrative 分支输出的可见叙事文本（可为空）")
 
 
 class MergerAgentSystemInput(BaseModel):

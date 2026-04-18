@@ -53,15 +53,15 @@ class EvolutionAgent:
 		llm_output.summary = summary
 
 		chain = causality_chain.model_copy(deep=True) if causality_chain else E7CausalityChain()
-		if not llm_output.visible_to_player:
-			chain.narrative_list.append(
-				{
-					"trace_id": str(trace_id),
-					"turn_id": str(turn_id),
-					"summary": summary,
-					"visible_to_player": "false",
-				}
-			)
+		chain.narrative_list.append(
+			{
+				"source": "evolution",
+				"trace_id": str(trace_id),
+				"turn_id": str(turn_id),
+				"summary": summary,
+				"visible_to_player": "true" if llm_output.visible_to_player else "false",
+			}
+		)
 
 		out = EvolutionAgentOutput(llm_output=llm_output, system_output=None)
 		return EvolutionResult(

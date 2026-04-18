@@ -8,11 +8,11 @@ from src.data.model.agent_output import (
 	NarrativeAgentOutput,
 	NarrativeAgentSystemOutput,
 )
-from src.data.model.narrative import NarrativeDraft, NarrativeDraftStatus, NarrativeStreamEvent
+from src.data.model.narrative import NarrativeStreamEvent
 
 
 class NarrativeAgent:
-	"""LLM-driven narrative draft generator."""
+	"""LLM-driven narrative string generator."""
 
 	def __init__(self, llm_service: LLMServiceBase) -> None:
 		self.llm_service = llm_service
@@ -27,22 +27,6 @@ class NarrativeAgent:
 			retry_budget=0,
 			validation_feedback=None,
 		)
-
-		if llm_output.narrative_draft is None:
-			llm_output.narrative_draft = NarrativeDraft(
-				draft_id=f"draft-{execution.turn_id}-{execution.trace_id}",
-				trace_id=execution.trace_id,
-				turn_id=execution.turn_id,
-				content=llm_output.narrative_str,
-				visible_to_player=True,
-				status=NarrativeDraftStatus.DRAFT,
-			)
-		else:
-			llm_output.narrative_draft.trace_id = execution.trace_id
-			llm_output.narrative_draft.turn_id = execution.turn_id
-			if not llm_output.narrative_draft.content:
-				llm_output.narrative_draft.content = llm_output.narrative_str
-			llm_output.narrative_draft.status = NarrativeDraftStatus.DRAFT
 
 		return NarrativeAgentOutput(
 			llm_output=llm_output,
@@ -68,7 +52,8 @@ class NarrativeAgent:
 			NarrativeStreamEvent(
 				event="narrative.completed",
 				data={
-					"draft_id": output.llm_output.narrative_draft.draft_id if output.llm_output.narrative_draft else "",
+					"trace_id": output.system_output.trace_id,
+					"turn_id": output.system_output.turn_id,
 					"content": text,
 				},
 			).model_dump(mode="json")

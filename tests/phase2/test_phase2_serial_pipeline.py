@@ -76,11 +76,11 @@ class FakeLLMService:
             visible = "偷偷给守卫下毒" not in raw_text
             summary = "玩家执行了行动"
             if "调查桌上的文件" in raw_text:
-                summary = "玩家调查了桌上的文件"
+                summary = "turn=2 trace=1002 玩家调查了桌上的文件"
             elif "攻击守卫" in raw_text:
-                summary = "玩家向守卫发起了攻击"
+                summary = "turn=1 trace=1001 玩家向守卫发起了攻击"
             elif "偷偷给守卫下毒" in raw_text:
-                summary = "玩家尝试偷偷给守卫下毒"
+                summary = "turn=3 trace=1003 玩家尝试偷偷给守卫下毒"
             return output_model.model_validate(
                 {
                     "summary": summary,
@@ -159,6 +159,7 @@ class TestPhase2SerialPipeline(unittest.TestCase):
             name="玩家",
             location=room.id,
             attributes={
+                "dexterity": Attribute(id="dexterity", name="敏捷", value=70, max_value=100, min_value=0),
                 "fight": Attribute(id="fight", name="格斗", value=60, max_value=100, min_value=0),
                 "investigation": Attribute(id="investigation", name="侦查", value=55, max_value=100, min_value=0),
                 "stealth": Attribute(id="stealth", name="潜行", value=45, max_value=100, min_value=0),
@@ -169,6 +170,7 @@ class TestPhase2SerialPipeline(unittest.TestCase):
             name="守卫",
             location=room.id,
             attributes={
+                "dexterity": Attribute(id="dexterity", name="敏捷", value=50, max_value=100, min_value=0),
                 "fight": Attribute(id="fight", name="格斗", value=50, max_value=100, min_value=0),
             },
         )
@@ -280,8 +282,8 @@ class TestPhase2SerialPipeline(unittest.TestCase):
         )
 
         self.assertEqual(result["route"], "serial_nl")
-        self.assertEqual(service.last_dm_payload["available_attributes"][0]["id"], "fight")
-        self.assertEqual(service.last_dm_payload["available_attributes"][0]["name"], "格斗")
+        self.assertEqual(service.last_dm_payload["available_attributes"][0]["id"], "dexterity")
+        self.assertEqual(service.last_dm_payload["available_attributes"][0]["name"], "敏捷")
         self.assertIn("char-player-0000", [item["id"] for item in service.last_dm_payload["valid_characters"]])
         self.assertIn("char-guard-0001", [item["id"] for item in service.last_dm_payload["valid_characters"]])
         self.assertEqual(result["dm"]["intent_info"]["attributes"], ["fight"])

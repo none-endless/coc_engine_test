@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type
 
@@ -17,6 +20,7 @@ from src.config.loader import ConfigLoader
 from src.data.model.agent_output import (
     DmAgentLlmOutput,
     EvolutionAgentLlmOutput,
+    MergerAgentLlmOutput,
     NarrativeAgentLlmOutput,
     NpcSchedulerAgentLlmOutput,
     StateAgentLlmOutput,
@@ -70,6 +74,10 @@ class StageSceneLLMService:
             return result
         if output_model is NarrativeAgentLlmOutput:
             result = output_model.model_validate(self._build_narrative_output(summary))
+            self._record_io(agent_name=agent_name, user_payload=user_payload, output_model=output_model, output=result)
+            return result
+        if output_model is MergerAgentLlmOutput:
+            result = output_model.model_validate(self._build_merger_output(user_payload))
             self._record_io(agent_name=agent_name, user_payload=user_payload, output_model=output_model, output=result)
             return result
         if output_model is StateAgentLlmOutput:
@@ -216,8 +224,21 @@ class StageSceneLLMService:
             text = "你暂时按兵不动，默默观察着周围的一切。"
         return {
             "narrative_str": text,
-            "narrative_draft": None,
         }
+
+    @staticmethod
+    def _build_merger_output(user_payload: Dict[str, Any]) -> Dict[str, Any]:
+        narrative_str = str(user_payload.get("narrative_str", "")).strip()
+        if narrative_str:
+            return {"narrative_str": narrative_str}
+
+        e7 = user_payload.get("e7", {})
+        if isinstance(e7, dict):
+            e7_text = str(e7.get("narrative_causality", "")).strip()
+            if e7_text:
+                return {"narrative_str": e7_text}
+
+        return {"narrative_str": "本回合未产生额外可见叙事。"}
 
     @staticmethod
     def _build_state_output(summary: str) -> Dict[str, Any]:
@@ -263,14 +284,80 @@ def build_engine_from_scene(scene_payload: Dict[str, Any], mode: str, use_real_l
 
 
 def build_causality_chain(previous_chain: E7CausalityChain, result: Dict[str, Any], trace_id: int) -> E7CausalityChain:
-    """把 narrative 分支结果折叠回当前会话的 e7 因果链。"""
+    """把 evolution 与 narrative 结果折叠回当前会话的 e7 因果链。"""
     chain = previous_chain.model_copy(deep=True)
+
+    evolution = result.get("evolution", {}) if isinstance(result, dict) else {}
+    evolution_summary = str(evolution.get("summary", "")).strip() if isinstance(evolution, dict) else ""
+    if evolution_summary:
+        chain.narrative_list.append(
+            {
+                "source": "evolution",
+                "trace_id": str(trace_id),
+                "content": evolution_summary,
+            }
+        )
+
     narrative = result.get("narrative", {})
     llm_output = narrative.get("llm_output", {}) if isinstance(narrative, dict) else {}
     narrative_str = llm_output.get("narrative_str")
     if narrative_str:
-        chain.narrative_list.append({"trace_id": str(trace_id), "content": str(narrative_str)})
+        chain.narrative_list.append(
+            {
+                "source": "narrative",
+                "trace_id": str(trace_id),
+                "content": str(narrative_str),
+            }
+        )
     return chain
+
+
+def run_full_test_suite(test_targets: List[str], extra_pytest_args: List[str]) -> int:
+    """执行当前仓库的全量测试，并把终端输出与摘要落盘。"""
+    log_dir = Path(__file__).with_name("log")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    txt_report = log_dir / f"full_test_{timestamp}.log"
+    json_report = log_dir / f"full_test_{timestamp}.json"
+
+    cmd = [sys.executable, "-m", "pytest", *test_targets, *extra_pytest_args]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+
+    completed = subprocess.run(
+        cmd,
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+
+    merged_output = (completed.stdout or "") + ("\n" if completed.stdout and completed.stderr else "") + (completed.stderr or "")
+    txt_report.write_text(merged_output, encoding="utf-8")
+
+    summary = {
+        "command": cmd,
+        "cwd": str(REPO_ROOT),
+        "exit_code": completed.returncode,
+        "test_targets": test_targets,
+        "extra_pytest_args": extra_pytest_args,
+        "txt_report": str(txt_report),
+    }
+    json_report.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    print("\n=== 全量测试结果 ===")
+    print(f"exit_code: {completed.returncode}")
+    print(f"文本报告: {txt_report}")
+    print(f"摘要报告: {json_report}")
+    print("输出摘要:")
+    preview = merged_output.strip().splitlines()
+    for line in preview[-20:]:
+        print(line)
+
+    return int(completed.returncode)
 
 
 def print_turn_summary(engine: Engine, result: Dict[str, Any], actor_id: str) -> None:
@@ -439,11 +526,34 @@ def parse_args() -> argparse.Namespace:
         default="config/config.yaml",
         help="真实 LLM 模式下使用的配置文件路径",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--full-test",
+        action="store_true",
+        help="执行 pytest 全量测试并输出落盘报告，执行后退出",
+    )
+    parser.add_argument(
+        "--test-target",
+        nargs="*",
+        default=["tests"],
+        help="--full-test 模式下传给 pytest 的目标路径，默认 tests",
+    )
+    parser.add_argument(
+        "--pytest-args",
+        nargs="*",
+        default=[],
+        help="--full-test 模式下附加给 pytest 的参数，例如 --pytest-args -q -x",
+    )
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        args.pytest_args = list(args.pytest_args) + list(unknown)
+    return args
 
 
 if __name__ == "__main__":
     args = parse_args()
+    if bool(args.full_test):
+        raise SystemExit(run_full_test_suite(test_targets=list(args.test_target), extra_pytest_args=list(args.pytest_args)))
+
     run_repl(
         scene_path=Path(args.scene),
         mode=args.mode,

@@ -27,6 +27,7 @@ from src.data.model.base import (
     WorldEntityStore,
 )
 from src.data.model.world_state import WorldState
+from src.engine.bootstrap_validation import EngineBootstrapError
 from src.engine.engine import Engine
 from src.rule.state_patch import ERROR_FIELD_NOT_MUTABLE, StatePatchError, StatePatchRuntime
 
@@ -79,6 +80,7 @@ class FakeLLMService:
                 {
                     "step_result": {
                         "summary": "本回合无 NPC 激活",
+                        "scheduled_npc_ids": [],
                         "extra_npc_context": {},
                     }
                 }
@@ -88,7 +90,6 @@ class FakeLLMService:
             return output_model.model_validate(
                 {
                     "narrative_str": "你推门离开房间，走廊里的冷风迎面扑来。",
-                    "narrative_draft": None,
                 }
             )
 
@@ -153,6 +154,7 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
             name="玩家",
             location=room.id,
             attributes={
+                "dexterity": Attribute(id="dexterity", name="敏捷", value=70, max_value=100, min_value=0),
                 "health": Attribute(id="health", name="生命", value=10, max_value=10, min_value=0),
             },
         )
@@ -185,7 +187,6 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
         branches = {x["branch"] for x in result["parallel_timeline"]}
         self.assertEqual(branches, {"npc_scheduler", "state", "narrative", "merger"})
         self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "你推门离开房间，走廊里的冷风迎面扑来。")
-        self.assertEqual(result["narrative"]["llm_output"]["narrative_draft"]["status"], "committed")
         self.assertTrue(result["narrative"]["stream_events"])
         self.assertEqual(result["merger"]["llm_output"]["narrative_str"], "你离开房间，走入了走廊。")
 
@@ -251,6 +252,7 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
             id="char-player-0000",
             name="玩家",
             location=room.id,
+            attributes={"dexterity": Attribute(id="dexterity", name="敏捷", value=60, max_value=100, min_value=0)},
         )
         world.reset(
             WorldEntityStore(
@@ -317,7 +319,6 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
         self.assertTrue(result["state"]["fallback_error"]["rollback_applied"])
         self.assertTrue(result["terminated"])
         self.assertFalse(result["narrative_triggered"])
-        self.assertIsNone(result["narrative"]["llm_output"]["narrative_draft"])
         self.assertIsNone(result["merger"])
         self.assertEqual(before["version"], after["version"])
         self.assertEqual(before["maps"], after["maps"])
@@ -442,9 +443,35 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
             )
 
         self.assertNotIn("narrative_info", service.payloads["state_change"])
-        self.assertIn("narrative_draft", service.payloads["merger"])
+        self.assertIn("e7", service.payloads["merger"])
         self.assertEqual(len(engine._narrative_info.recent), 5)
         self.assertGreaterEqual(len(engine._narrative_info.narrative_log), 2)
+
+    def test_missing_dexterity_blocks_engine_bootstrap(self):
+        room = MapEntity(
+            id="map-room-0001",
+            name="房间",
+            description=Description(public=["空房间"]),
+        )
+        player = CharacterEntity(
+            id="char-player-0000",
+            name="玩家",
+            location=room.id,
+            attributes={"health": Attribute(id="health", name="生命", value=10, max_value=10, min_value=0)},
+        )
+        world = WorldState()
+        world.reset(
+            WorldEntityStore(
+                maps={room.id: room},
+                characters={player.id: player},
+                items={},
+            )
+        )
+
+        with self.assertRaises(EngineBootstrapError) as exc:
+            Engine(world_state=world, mode="phase3", llm_service=FakeLLMService())
+
+        self.assertIn("敏捷", str(exc.exception))
 
 
 if __name__ == "__main__":

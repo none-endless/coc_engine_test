@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from ..narrative import NarrativeDraft
 
 
 class InputType(str, Enum):
@@ -87,13 +86,14 @@ class E4EvolutionStepResult(BaseModel):
 class E4SchedulerStepResult(BaseModel):
     """e4：scheduler 给 performer 的额外上下文。"""
 
+    scheduled_npc_ids: List[str] = Field(default_factory=list, description="本回合实际进入调度的 NPC ID 顺序列表")
     extra_npc_context: Dict[str, Optional[str]] = Field(default_factory=dict, description="scheduler 给 performer 的额外信息")
 
 
 class E7CausalityChain(BaseModel):
     """e7：回合因果链。"""
 
-    narrative_list: List[Dict[str, str]] = Field(default_factory=list, description="narrative_agent 的输出列表")
+    narrative_list: List[Dict[str, str]] = Field(default_factory=list, description="回合因果事件列表（可含 evolution/narrative 分支）")
 
 
 class FallbackError(BaseModel):
@@ -149,7 +149,6 @@ class NarrativeAgentChainInput(BaseModel):
 
 
 class MergerAgentChainInput(BaseModel):
-    """merger_agent：e7 + narrative_draft"""
+    """merger_agent：e7。"""
 
     e7: E7CausalityChain = Field(description="回合因果链")
-    narrative_draft: NarrativeDraft = Field(description="待提交的叙事草稿")

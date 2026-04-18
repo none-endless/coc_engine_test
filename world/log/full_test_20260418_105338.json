@@ -1,0 +1,20 @@
+{
+  "command": [
+    "c:\\Users\\25173\\miniconda3\\envs\\a_engine\\python.exe",
+    "-m",
+    "pytest",
+    "tests/phase3",
+    "tests/phase4",
+    "-q"
+  ],
+  "cwd": "C:\\Users\\25173\\Desktop\\engine_refacting",
+  "exit_code": 0,
+  "test_targets": [
+    "tests/phase3",
+    "tests/phase4"
+  ],
+  "extra_pytest_args": [
+    "-q"
+  ],
+  "txt_report": "c:\\Users\\25173\\Desktop\\engine_refacting\\world\\log\\full_test_20260418_105338.log"
+}

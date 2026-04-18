@@ -11,6 +11,7 @@
 5. 提供可回滚、可重试、可持久化的状态更新机制。
 6. 保持实现可落地，避免过度工程化。
 7. 兼容各类输入,保障响应智能,玩家自由度高,实现线下跑团级的高代入自由体验
+8. 可以实现多种属性类型配置,但其中 `敏捷`  属性作为优先级排序的前提是使用该框架进行游戏设计的必要前提需要显式提醒制作者设计敏捷属性,如果没有不允许进入系统
 
 非目标：
 
@@ -23,7 +24,7 @@
 1. **`location` 是位置真值**：人物与物品的位置只以 `location` 为准；地图上的 `char_index` / `item_index` 为系统派生索引，不允许 Agent 直接写入。
 2. **链路对象必须结构化**：Agent 之间传递结构化对象，不直接把自由文本当作系统真值。
 3. **每回合必须事务化**：每次输入都包裹为一个回合事务，携带 `turn_id`、`world_version`、`event_id` 等元数据。
-4. **叙事先草稿、后提交**：`narrative_agent` 可以并发生成 `NarrativeDraft`，但只有当状态提交成功后，草稿才可进入叙事真值池。
+4. **叙事链路统一进 e7**：`evolution_agent.summary` 无论是否可见都必须写入回合因果链（e7），并由 `merger_agent` 统一合并。
 5. **真值池分层维护**：世界状态、叙事状态、链路日志分别维护，不允许混写。
 6. **扩展字段必须受约束**：所有 `extensions` 字段都必须挂载在命名空间下，并由 schema registry 约束读写权限。
 
@@ -49,7 +50,7 @@ V1 只允许以下一个并发区：
 1. `ShortSummary` 完成后，并发生成：
    - `NpcPlan` npc_schduler的输出
    - `StatePatch` state_change_agent的输出
-   - `NarrativeDraft`narrative_agent的输出
+  - `NarrativeText` narrative_agent 的字符串输出（仅 visible_to_player=true 时生成）
 
 除此之外：
 
@@ -185,7 +186,7 @@ evolution_agent完成世界演化计算后，生成short_summary（本次交互�
 
 2. 并发分支B：发送给stateChange_agent（状态变更代理），驱动全局世界状态的正式更新
 
-3. 并发分支2：发送给narrative_agent（叙事代理），由其生成自然语言叙事，进行流式输出
+3. 并发分支2：当 `visible_to_player=true` 时发送给narrative_agent（叙事代理），由其生成自然语言叙事字符串并进行流式输出
 
 
 ---
@@ -207,7 +208,7 @@ stateChange_agent接收short_summary的状态变更指令，执行世界状态�
 ---
 四、叙事后处理与NPC行为闭环
 
-1. 叙事后处理：narrative_agent生成的流式叙事输出，进入merger_agent（合并代理），完成简化、去重、逻辑合并，再同步到「叙事信息」全局状态池
+1. 叙事后处理：`evolution.summary`（始终存在）与 narrative_agent 的可见叙事字符串（可选）统一进入merger_agent（合并代理），完成简化、去重、逻辑合并，再同步到「叙事信息」全局状态池
 
 2. NPC行为闭环：npc_scheduler_agent基于short_summary的状态信息，生成NPC行为调度指令，驱动npc_agent生成新的NPC行为输入，形成NPC自主行为的完整闭环
 
@@ -349,7 +350,7 @@ Attribute {
         e3:规则结算事实:系统的客观判断,由rulesystem产生
         e4:步骤结算:系统的推演结算,由evolution_agent,scheduler产生
         e7:回合因果链:每个链路信息的时序关系,记录步骤结算e4,包含时间戳
-    E4:叙事投影: 结算出的新叙事信息,由narrative_agent产生片段,最后由merger_agent负责合并成简短记录,作为叙事真值,写入到叙事信息中的recent当中
+    E4:叙事投影: 结算出的新叙事信息,由narrative_agent产生可见叙事字符串（可选）,并与e7一起交给merger_agent合并成简短记录,作为叙事真值,写入到叙事信息中的recent当中
     E5:世界投影: 结算出的新世界信息,由state_change_agent产生,并直接写入到持久化数据库中
 
 
