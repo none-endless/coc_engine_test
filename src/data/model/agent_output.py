@@ -1,6 +1,5 @@
 """
 Agent 输出聚合模型。
-
 原则：
 1. 每个 Agent 输出拆分为 llm_output 与 system_output。
 2. llm_output 仅承载模型产出内容。
@@ -25,7 +24,7 @@ class AgentSystemOutputBase(BaseModel):
 
 
 class TurnTraceSystemOutputBase(AgentSystemOutputBase):
-    """包含 turn_id/trace_id 的系统输出基类。"""
+    """包含 turn_id 与 trace_id 的系统输出基类。"""
 
     trace_id: int = Field(default=0, description="链路追踪编号")
     turn_id: int = Field(default=0, description="回合编号")
@@ -126,10 +125,10 @@ class CocCheckResult(BaseModel):
     result_type: str = Field(default="", description="触发方最终结果")
     roll: int = Field(default=0, description="本次骰点结果")
     target: int = Field(default=0, description="本次鉴定目标值")
-    opposed_id: Optional[str] = Field(default=None, description="对抗检定中的对手 ID")
-    opposed_name: Optional[str] = Field(default=None, description="对抗检定中的对手名称")
-    winner_id: Optional[str] = Field(default=None, description="本次检定的获胜者 ID")
-    affected_ids: List[str] = Field(default_factory=list, description="本次检定直接作用到的角色 ID 列表")
+    opposed_id: Optional[str] = Field(default=None, description="对抗鉴定中的对手 ID")
+    opposed_name: Optional[str] = Field(default=None, description="对抗鉴定中的对手名称")
+    winner_id: Optional[str] = Field(default=None, description="本次鉴定的获胜者 ID")
+    affected_ids: List[str] = Field(default_factory=list, description="本次鉴定直接作用到的角色 ID 列表")
     participants: List[CocCheckParticipant] = Field(default_factory=list, description="全部参与方的结构化结果")
 
 
@@ -240,6 +239,27 @@ class NpcPerformerChainResult(BaseModel):
     e7: E7CausalityChain = Field(default_factory=E7CausalityChain, description="NPC 下游并回主链前的因果链投影")
 
 
+class ConsistencyAgentLlmOutput(AgentLlmOutputBase):
+    """一致性维护 agent 的 LLM 输出。"""
+
+    changes: List[StateChangeOp] = Field(default_factory=list, description="一致性修复使用的原子 DSL 变更列表")
+    can_proceed: bool = Field(default=True, description="当前快照是否允许继续被后续流程消费")
+    system_message: str = Field(default="", description="最小系统提示，用于阻断或降级消息")
+
+
+class ConsistencyAgentSystemOutput(AgentSystemOutputBase):
+    """一致性维护 agent 的系统输出。"""
+
+    patch_meta: PatchMeta = Field(default_factory=PatchMeta, description="一致性修复补丁元信息")
+
+
+class ConsistencyAgentOutput(AgentOutputEnvelope):
+    """一致性维护 agent 输出封装。"""
+
+    llm_output: ConsistencyAgentLlmOutput = Field(description="LLM 输出")
+    system_output: ConsistencyAgentSystemOutput = Field(description="系统输出")
+
+
 class TurnAgentOutputs(BaseModel):
     """单回合所有 agent 输出聚合。"""
 
@@ -250,6 +270,7 @@ class TurnAgentOutputs(BaseModel):
     npcperformer: NpcPerformerAgentOutput = Field(description="NpcPerformer agent 输出")
     narrative: NarrativeAgentOutput = Field(description="Narrative agent 输出")
     merger_agent: MergerAgentOutput = Field(description="Merger agent 输出")
+    consistency_agent: Optional[ConsistencyAgentOutput] = Field(default=None, description="Consistency agent 输出")
 
 
 class EvolutionToNarrativeProjection(BaseModel):

@@ -4,10 +4,10 @@ Agent 输入聚合模型（去冗余版）。
 原则：
 1. llm_input 仅放 LLM 需要的最小上下文。
 2. system_input 放重试、追踪、原始链路等系统控制数据。
-3. 不包含一致性维护 agent（NarrativeConsistency）。
+3. 一致性维护 agent 也必须走统一数据模型，不允许在 engine 中裸传字典替代契约。
 """
 
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -272,8 +272,38 @@ class MergerAgentInput(BaseModel):
     system_input: MergerAgentSystemInput = Field(default_factory=MergerAgentSystemInput, description="仅系统使用")
 
 
+class ConsistencyRecentChangeLog(BaseModel):
+    """一致性维护 agent 消费的最近变更日志条目。"""
+
+    turn_id: int = Field(default=0, description="发生该变更的回合号")
+    route: str = Field(default="", description="该回合的主路由")
+    summary: str = Field(default="", description="供一致性维护使用的简短摘要")
+
+
+class ConsistencyAgentLlmInput(BaseModel):
+    """一致性维护 agent 的 LLM 输入。"""
+
+    world_snapshot: Dict[str, Any] = Field(default_factory=dict, description="当前世界快照")
+    narrative_info: NarrativeInfo = Field(description="当前叙事真值")
+    recent_change_logs: List[ConsistencyRecentChangeLog] = Field(default_factory=list, description="最近若干回合的变更日志")
+
+
+class ConsistencyAgentSystemInput(BaseModel):
+    """一致性维护 agent 的系统输入。"""
+
+    execution: SystemExecutionMeta = Field(default_factory=SystemExecutionMeta, description="系统执行元信息")
+
+
+class ConsistencyAgentInput(BaseModel):
+    """一致性维护 agent 输入封装。"""
+
+    identity: AgentIdentity = Field(description="agent 身份与 skill")
+    llm_input: ConsistencyAgentLlmInput = Field(description="仅提供给 LLM 的输入")
+    system_input: ConsistencyAgentSystemInput = Field(default_factory=ConsistencyAgentSystemInput, description="仅系统使用")
+
+
 class TurnAgentInputs(BaseModel):
-    """单回合所有 agent 输入聚合，不含一致性维护 agent。"""
+    """单回合所有 agent 输入聚合。"""
 
     dmagent: DmAgentInput = Field(description="DM agent 输入")
     evolution: EvolutionAgentInput = Field(description="Evolution agent 输入")
@@ -282,6 +312,7 @@ class TurnAgentInputs(BaseModel):
     npcperformer: NpcPerformerAgentInput = Field(description="NpcPerformer agent 输入")
     narrative: NarrativeAgentInput = Field(description="Narrative agent 输入")
     merger_agent: MergerAgentInput = Field(description="Merger agent 输入")
+    consistency_agent: Optional[ConsistencyAgentInput] = Field(default=None, description="Consistency agent 输入")
 
 
 class NarrativeProjectionE4(BaseModel):
