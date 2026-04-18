@@ -70,6 +70,10 @@ class NpcSchedulerAgent:
             npc_id: step_result.extra_npc_context.get(npc_id)
             for npc_id in scheduled_ids
         }
+        if candidate_ids and not scheduled_ids:
+            step_result.summary = (
+                f"{step_result.summary}（系统过滤后本回合未调度NPC：可能处于冷却或关键状态不足）"
+            )
         llm_output.step_result.scheduled_npc_ids = scheduled_ids
         llm_output.step_result.extra_npc_context = filtered_context
         return llm_output

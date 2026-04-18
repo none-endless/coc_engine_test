@@ -19,13 +19,23 @@ from src.engine.engine import Engine
 
 
 class PerformerPipelineFakeLLMService:
-    def __init__(self) -> None:
+    def __init__(self, performer_payload: Dict[str, Any] | None = None) -> None:
         self.config = ConfigLoader.load(
             cli_overrides={
                 "system.max_retry_count": 1,
                 "agent.npc.max_actions_per_turn": 1,
             }
         )
+        self._performer_payload = performer_payload or {
+            "intent": "description",
+            "action_text": "守卫握紧武器，环顾四周，准备检查声响来源。",
+            "routing_hint": None,
+            "attributes": [],
+            "against_char_id": [],
+            "difficulty": None,
+            "change_basic_goal": None,
+            "change_active_goal": "调查可疑声响",
+        }
 
     def call_llm_json(
         self,
@@ -68,14 +78,7 @@ class PerformerPipelineFakeLLMService:
                 }
             )
         if output_model is NpcPerformerAgentLlmOutput:
-            return output_model.model_validate(
-                {
-                    "intent": "description",
-                    "action_text": "守卫握紧武器，环顾四周，准备检查声响来源。",
-                    "change_basic_goal": None,
-                    "change_active_goal": "调查可疑声响",
-                }
-            )
+            return output_model.model_validate(self._performer_payload)
         if output_model is NarrativeAgentLlmOutput:
             return output_model.model_validate({"narrative_str": "你暂时没有继续行动。"})
         if output_model is MergerAgentLlmOutput:
@@ -131,6 +134,13 @@ class TestPhase5NpcPerformer(unittest.TestCase):
         self.assertEqual(performer["system_output"]["id"], "char-guard-0001")
         self.assertEqual(performer["llm_output"]["intent"], "description")
         self.assertEqual(performer["llm_output"]["change_active_goal"], "调查可疑声响")
+        self.assertEqual(performer["llm_output"]["routing_hint"], None)
+
+        self.assertEqual(len(result["npc_performer_chain"]), 1)
+        chain_item = result["npc_performer_chain"][0]
+        self.assertEqual(chain_item["npc_id"], "char-guard-0001")
+        self.assertIsNone(chain_item["check"])
+        self.assertTrue(chain_item["evolution"]["summary"])
 
         updated_guard = self.world.get_character("char-guard-0001")
         self.assertEqual(updated_guard.goal.active_goal, "调查可疑声响")
@@ -140,6 +150,39 @@ class TestPhase5NpcPerformer(unittest.TestCase):
         self.assertEqual(updated_guard.memory.short[-1], updated_guard.memory.current_event)
         self.assertEqual(updated_guard.memory.short_log[-1].turn, 6)
         self.assertEqual(updated_guard.memory.log[-1].turn, 6)
+
+    def test_npc_performer_can_trigger_numeric_check_and_evolution(self):
+        engine = Engine(
+            world_state=self.world,
+            mode="phase3",
+            llm_service=PerformerPipelineFakeLLMService(
+                performer_payload={
+                    "intent": "interaction",
+                    "action_text": "守卫试图快速夺下玩家手中的物品。",
+                    "routing_hint": "num",
+                    "attributes": ["dexterity"],
+                    "against_char_id": [],
+                    "difficulty": None,
+                    "change_basic_goal": None,
+                    "change_active_goal": "控制局面",
+                }
+            ),
+        )
+
+        result = engine.run_turn(
+            raw_input="我站着不动",
+            actor_id="char-player-0000",
+            turn_id=7,
+            trace_id=7007,
+        )
+
+        self.assertEqual(len(result["npc_performer_chain"]), 1)
+        chain_item = result["npc_performer_chain"][0]
+        self.assertEqual(chain_item["npc_id"], "char-guard-0001")
+        self.assertIsNotNone(chain_item["check"])
+        self.assertEqual(chain_item["check"]["check_type"], "num")
+        self.assertEqual(chain_item["check"]["id"], "char-guard-0001")
+        self.assertTrue(chain_item["evolution"]["summary"])
 
 
 if __name__ == "__main__":

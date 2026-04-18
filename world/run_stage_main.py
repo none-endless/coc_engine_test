@@ -578,7 +578,8 @@ def _run_single_turn(
     print(f"\n>>> {normalized_input}")
     print_turn_summary(engine=engine, result=result, actor_id=actor_id)
     print(f"log: {io_logger.log_path}")
-    return build_causality_chain(causality_chain, result, trace_id)
+    # E7 仅用于单回合因果拼装；回合提交后由 merger/narrative_info 承载结果，下一回合从空链开始。
+    return E7CausalityChain()
 
 
 def run_scripted_session(

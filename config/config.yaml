@@ -20,7 +20,7 @@ agent:
     memory_turns: 15
     shortlog_turns: 30
     max_actions_per_turn: 3
-    cooldown_turns: 1
+    cooldown_turns: 0
   narrative:
     recent_turns: 5
 

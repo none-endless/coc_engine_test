@@ -171,6 +171,7 @@ class TestPhase5NpcScheduler(unittest.TestCase):
         second_input.system_input.execution.turn_id = 11
         second_output = agent.run(agent_input=second_input)
         self.assertEqual(second_output.llm_output.step_result.scheduled_npc_ids, [])
+        self.assertIn("系统过滤后本回合未调度NPC", second_output.llm_output.step_result.summary)
 
         third_input = self._build_input()
         third_input.system_input.execution.turn_id = 12

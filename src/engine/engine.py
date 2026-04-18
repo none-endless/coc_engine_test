@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from src.agent.llm.evolution_agent import EvolutionAgent, EvolutionResult
 from src.agent.llm.input_agent import DMAgent, DmAnalyzeResult
@@ -369,7 +369,8 @@ class Engine:
             llm_input=EvolutionAgentLlmInput(
                 e1=E1LlmView(raw_text=raw_input, source_id=actor_id),
                 e3=E3LlmView(success=e3_result.success or "none"),
-                e7=E7LlmView(narrative_causality=self._stringify_e7(e7_input)),
+                # 历史因果链仅用于系统内部追踪，避免污染本回合推演。
+                e7=E7LlmView(narrative_causality=""),
                 world_info=views.dm_view,
                 narrative_info=self._narrative_info,
             ),
@@ -582,7 +583,7 @@ class Engine:
         else:
             scheduler_out, state_out = await asyncio.gather(scheduler_task, state_task)
 
-        performer_out = await self._run_performer_branch(
+        performer_out, performer_chain = await self._run_performer_branch(
             scheduler_out=scheduler_out,
             source_actor_id=actor_id,
             turn_id=turn_id,
@@ -645,6 +646,7 @@ class Engine:
             "evolution": evolution_result.model_dump(mode="json"),
             "npcscheduler": scheduler_out.model_dump(mode="json"),
             "npcperformer": [item.model_dump(mode="json") for item in performer_out],
+            "npc_performer_chain": performer_chain,
             "state": state_out,
             "narrative": narrative_payload,
             "merger": merger_payload,
@@ -777,12 +779,13 @@ class Engine:
         trace_id: int,
         world_version: int,
         branch_logs: List[Dict[str, Any]],
-    ) -> List[NpcPerformerAgentOutput]:
+    ) -> Tuple[List[NpcPerformerAgentOutput], List[Dict[str, Any]]]:
         scheduled_npc_ids = scheduler_out.llm_output.step_result.scheduled_npc_ids
         if not scheduled_npc_ids:
-            return []
+            return [], []
 
         outputs: List[NpcPerformerAgentOutput] = []
+        downstream_chain: List[Dict[str, Any]] = []
         started = time.perf_counter()
         started_at = datetime.now(timezone.utc).isoformat()
 
@@ -826,6 +829,16 @@ class Engine:
             )
             output = await asyncio.to_thread(self.npc_performer_agent.run, agent_input=npc_input)
             outputs.append(output)
+            chain_result = await asyncio.to_thread(
+                self._run_npc_performer_downstream,
+                npc_id,
+                source_actor_id,
+                output,
+                turn_id,
+                trace_id,
+                world_version,
+            )
+            downstream_chain.append(chain_result)
             self._record_io(
                 kind="agent_io",
                 agent_name="npc_performer",
@@ -850,7 +863,147 @@ class Engine:
                 "npc_ids": list(scheduled_npc_ids),
             }
         )
-        return outputs
+        return outputs, downstream_chain
+
+    def _run_npc_performer_downstream(
+        self,
+        npc_id: str,
+        source_actor_id: str,
+        performer_output: NpcPerformerAgentOutput,
+        turn_id: int,
+        trace_id: int,
+        world_version: int,
+    ) -> Dict[str, Any]:
+        """执行 NPC performer 的下游链路：可选鉴定 + evolution。"""
+        llm_output = performer_output.llm_output
+        check_result: Optional[CocCheckResult] = None
+        check_error: Optional[str] = None
+
+        try:
+            check_result = self._run_npc_check(actor_id=npc_id, performer_output=performer_output)
+        except ValueError as exc:
+            check_error = str(exc)
+
+        e3_result = E3RuleResult(
+            intent=llm_output.intent,
+            success="",
+        )
+        if check_result is not None:
+            e3_result = E3RuleResult(
+                intent=llm_output.intent,
+                check_type=check_result.check_type,
+                success=check_result.result_type,
+                difficulty=check_result.difficulty,
+                actor_id=check_result.id,
+                opposed_id=check_result.opposed_id,
+                winner_id=check_result.winner_id,
+                affected_ids=check_result.affected_ids,
+            )
+
+        npc = self.world_state.get_character(npc_id)
+        views = self.world_provider.precompute_all_views(current_map_id=npc.location, turn=turn_id)
+        npc_e1 = E1InputInfo(
+            turn_id=turn_id,
+            trace_id=trace_id,
+            world_version=world_version,
+            source_id=npc_id,
+            raw_text=llm_output.action_text,
+            metadata={"branch": "npc_performer", "source_actor_id": source_actor_id},
+        )
+        evo_input = EvolutionAgentInput(
+            identity=AgentIdentity(id="evolution", skill="summarize world evolution"),
+            llm_input=EvolutionAgentLlmInput(
+                e1=E1LlmView(raw_text=llm_output.action_text, source_id=npc_id),
+                e3=E3LlmView(success=e3_result.success or "none"),
+                e7=E7LlmView(narrative_causality=""),
+                world_info=views.dm_view,
+                narrative_info=self._narrative_info,
+            ),
+            system_input=EvolutionAgentSystemInput(
+                chain_raw=EvolutionAgentChainInput(
+                    e1=npc_e1,
+                    e3=e3_result,
+                    e7=E7CausalityChain(),
+                ),
+                execution=SystemExecutionMeta(
+                    turn_id=turn_id,
+                    trace_id=trace_id,
+                    world_version=world_version,
+                    debug={"branch": "npc_performer_evolution", "npc_id": npc_id},
+                ),
+            ),
+        )
+        evolution_result = self.evolution_agent.evolve(agent_input=evo_input, causality_chain=None)
+        self._record_io(
+            kind="agent_io",
+            agent_name="npc_performer_chain",
+            input_data={
+                "npc_id": npc_id,
+                "performer": performer_output.model_dump(mode="json"),
+                "check_requested": llm_output.routing_hint,
+            },
+            output_data={
+                "check": check_result.model_dump(mode="json") if check_result is not None else None,
+                "check_error": check_error,
+                "evolution": evolution_result.model_dump(mode="json"),
+            },
+            extra={
+                "branch": "npc_performer_chain",
+                "turn_id": turn_id,
+                "trace_id": trace_id,
+                "npc_id": npc_id,
+            },
+        )
+        return {
+            "npc_id": npc_id,
+            "intent": llm_output.intent,
+            "check": check_result.model_dump(mode="json") if check_result is not None else None,
+            "check_error": check_error,
+            "evolution": evolution_result.model_dump(mode="json"),
+        }
+
+    def _run_npc_check(self, *, actor_id: str, performer_output: NpcPerformerAgentOutput) -> Optional[CocCheckResult]:
+        """按 performer 输出执行 NPC 鉴定；无鉴定需求时返回 None。"""
+        intent_info = performer_output.llm_output
+        if intent_info.routing_hint not in {"num", "against"}:
+            return None
+
+        attrs = intent_info.attributes or []
+        if not attrs:
+            raise ValueError("npc check routing without attributes")
+
+        actor = self.world_state.get_character(actor_id)
+        attr_name = attrs[0]
+        attr = actor.attributes.get(attr_name)
+        if attr is None:
+            raise ValueError(f"attribute not found on npc: {attr_name}")
+
+        if intent_info.routing_hint == "against":
+            participant_ids = intent_info.against_char_id or []
+            target_id = next((char_id for char_id in participant_ids if char_id != actor_id), None)
+            if target_id is None:
+                raise ValueError("npc against routing requires target id")
+            target = self.world_state.get_character(target_id)
+            target_attr = target.attributes.get(attr_name)
+            if target_attr is None:
+                raise ValueError(f"attribute not found on target: {attr_name}")
+
+            return self.rule_system.run_against_check(
+                actor_id=actor_id,
+                actor_attribute_name=attr_name,
+                actor_attribute_value=attr.value,
+                target_id=target_id,
+                target_attribute_name=attr_name,
+                target_attribute_value=target_attr.value,
+                difficulty=intent_info.difficulty,
+            )
+
+        return self.rule_system.run_numeric_check(
+            actor_id=actor_id,
+            attribute_name=attr_name,
+            attribute_value=attr.value,
+            difficulty=intent_info.difficulty,
+        )
 
     async def _run_narrative_branch(
         self,

@@ -209,6 +209,10 @@ class NpcPerformerAgentLlmOutput(AgentLlmOutputBase):
 
     intent: str = Field(default="", description="NPC 互动类型")
     action_text: str = Field(default="", description="npc 输出行为文本")
+    routing_hint: Optional[str] = Field(default=None, description="鉴定路由提示：num/against/null")
+    attributes: List[str] = Field(default_factory=list, description="鉴定属性 ID 列表")
+    against_char_id: List[str] = Field(default_factory=list, description="对抗鉴定角色 ID 列表")
+    difficulty: Optional[str] = Field(default=None, description="可选鉴定难度，通常由系统决策")
     change_basic_goal: Optional[str] = Field(default=None, description="新的基础目标")
     change_active_goal: Optional[str] = Field(default=None, description="新的当前活跃目标")
 
