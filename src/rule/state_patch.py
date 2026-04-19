@@ -48,15 +48,16 @@ class StatePatchRuntime:
 
     def apply_patch(self, patch_output: StateAgentOutput) -> StatePatchApplyResult:
         patch_meta = patch_output.system_output.patch_meta
-        snapshot = copy.deepcopy(self.world_state.get_snapshot())
+        snapshot_obj = self.world_state.get_snapshot()
+        snapshot = copy.deepcopy(snapshot_obj.to_payload())
         extension_registry = self.world_state.get_store_copy().extension_registry
 
         expected_version = patch_meta.expected_version
-        if expected_version is not None and snapshot.get("version") != expected_version:
+        if expected_version is not None and snapshot_obj.version != expected_version:
             raise StatePatchError(
                 code=ERROR_ASSERT_FAILED,
                 message="snapshot version mismatch",
-                details={"expected_version": expected_version, "actual_version": snapshot.get("version")},
+                details={"expected_version": expected_version, "actual_version": snapshot_obj.version},
             )
 
         changes = list(patch_output.llm_output.changes)

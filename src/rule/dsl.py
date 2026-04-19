@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from src.data.model.world_state import WorldSnapshot
+
 
 class DslError(ValueError):
     pass
@@ -203,16 +205,17 @@ class DslEngine:
     def evaluate(
         self,
         expression: str,
-        snapshot: Dict[str, Any],
+        snapshot: WorldSnapshot | Dict[str, Any],
         expected_version: Optional[int] = None,
     ) -> bool:
+        snapshot_payload = snapshot.to_payload() if isinstance(snapshot, WorldSnapshot) else snapshot
         if expected_version is not None:
-            version = snapshot.get("version")
+            version = snapshot_payload.get("version")
             if version != expected_version:
                 raise DslError(f"snapshot version mismatch: expected {expected_version}, got {version}")
 
         ast = self.parse(expression)
-        value = self._eval_node(ast, snapshot)
+        value = self._eval_node(ast, snapshot_payload)
         if not isinstance(value, bool):
             raise DslError("expression must evaluate to boolean")
         return value

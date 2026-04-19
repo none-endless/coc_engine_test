@@ -216,10 +216,25 @@ class NpcPerformerAgentLlmOutput(AgentLlmOutputBase):
     change_active_goal: Optional[str] = Field(default=None, description="新的当前活跃目标")
 
 
+class NpcPerformerPendingSideEffects(BaseModel):
+    """由 performer 生成、由编排层决定何时提交的副作用载荷。"""
+
+    current_event: str = Field(default="", description="本回合写入 NPC memory.current_event 的内容")
+    append_short: bool = Field(default=False, description="是否将 current_event 追加到 memory.short")
+    append_short_log: bool = Field(default=False, description="是否写入 memory.short_log")
+    append_log: bool = Field(default=False, description="是否写入 memory.log")
+    next_base_goal: Optional[str] = Field(default=None, description="可选的新 base_goal")
+    next_active_goal: Optional[str] = Field(default=None, description="可选的新 active_goal")
+
+
 class NpcPerformerAgentSystemOutput(TurnTraceSystemOutputBase):
     """npc_performer_agent 的系统输出。"""
 
     id: str = Field(default="", description="角色 id")
+    pending_side_effects: NpcPerformerPendingSideEffects = Field(
+        default_factory=NpcPerformerPendingSideEffects,
+        description="待提交副作用，由编排层控制提交时机",
+    )
 
 
 class NpcPerformerAgentOutput(AgentOutputEnvelope):

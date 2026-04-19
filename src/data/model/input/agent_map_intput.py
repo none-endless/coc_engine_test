@@ -63,13 +63,18 @@ class EntityDescriptionSummary(BaseModel):
     description: "DescriptionViewForAgent" = Field(description="描述信息（含 hint）")
 
 
-class DMWorldView(BaseModel):
+class BaseMapView(BaseModel):
+    """地图基础字段，供各类 world view 复用。"""
+
+    map_id: str = Field(description="地图 ID")
+    map_name: str = Field(description="地图名称")
+
+
+class DMWorldView(BaseMapView):
     """
     DM/Evolution 世界视图
     仅包含玩家所处地图的描述信息（public + add）
     """
-    map_id: str = Field(description="地图 ID")
-    map_name: str = Field(description="地图名称")
     map_description: "DescriptionViewForAgent" = Field(description="地图描述")
     characters: Dict[str, "EntityDescriptionSummary"] = Field(default_factory=dict, description="角色 ID -> 描述摘要")
     items: Dict[str, "EntityDescriptionSummary"] = Field(default_factory=dict, description="物品 ID -> 描述摘要（仅限在地图上的物品）")
@@ -100,7 +105,7 @@ class EntityWritableView(BaseModel):
     writable_fields: List["WritableFieldInfo"] = Field(default_factory=list, description="可写字段列表")
 
 
-class StateAgentWorldView(BaseModel):
+class StateAgentWorldView(BaseMapView):
     """
     StateAgent 世界视图
     包含互动对象所处地图的所有可写字段，按实体分类组织
@@ -108,8 +113,6 @@ class StateAgentWorldView(BaseModel):
     示例：当玩家说"脚趾被砸到了，减少生命值"时，
     Agent 可以通过 player_entity.writable_fields 中找到 healthy
     """
-    map_id: str = Field(description="地图 ID")
-    map_name: str = Field(description="地图名称")
     entities: List["EntityWritableView"] = Field(default_factory=list, description="所有可写实体列表")
 
 
@@ -142,13 +145,11 @@ class ConnectionBrief(BaseModel):
     condition: Optional[str] = Field(default=None, description="连接条件表达式")
 
 
-class MapSlice(BaseModel):
+class MapSlice(BaseMapView):
     """
     地图切片（用于 NpcScheduler/narrative，无 hint）
     注意：不包含 NPC 的 memory/goal 等个人信息
     """
-    map_id: str = Field(description="地图 ID")
-    map_name: str = Field(description="地图名称")
     description: "DescriptionViewForNpc" = Field(description="描述信息（public + add，无 hint）")
     connections: List["ConnectionBrief"] = Field(default_factory=list, description="连接列表")
     characters: List["CharBrief"] = Field(default_factory=list, description="角色列表（不含 memory/goal）")

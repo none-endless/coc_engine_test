@@ -6,7 +6,12 @@ from typing import List, Optional, Set
 from src.agent.llm.service import LLMServiceBase, LLMServiceError, LLMValidationError
 from src.agent.prompt.npc_performer_prompt import NPC_PERFORMER_SYSTEM_PROMPT
 from src.data.model.agent_input import NpcPerformerAgentInput
-from src.data.model.agent_output import NpcPerformerAgentLlmOutput, NpcPerformerAgentOutput, NpcPerformerAgentSystemOutput
+from src.data.model.agent_output import (
+    NpcPerformerAgentLlmOutput,
+    NpcPerformerAgentOutput,
+    NpcPerformerAgentSystemOutput,
+    NpcPerformerPendingSideEffects,
+)
 from src.data.model.base import Goal, MemoryLogItem, ShortLogItem
 from src.data.model.world_state import WorldState
 
@@ -38,7 +43,7 @@ class NpcPerformerAgent:
             available_attributes = sorted(actor.attributes.keys())
         valid_character_ids = {item.id for item in agent_input.llm_input.valid_characters if item.id}
         if not valid_character_ids:
-            valid_character_ids = set(self.world_state.get_snapshot().get("characters", {}).keys())
+            valid_character_ids = set(self.world_state.get_snapshot().characters.keys())
 
         feedback: Optional[str] = None
         errors: List[str] = []
@@ -108,6 +113,11 @@ class NpcPerformerAgent:
                 trace_id=execution.trace_id,
                 turn_id=execution.turn_id,
                 id=npc_id,
+                pending_side_effects=self._build_pending_side_effects(
+                    agent_input=agent_input,
+                    llm_output=llm_output,
+                    npc_id=npc_id,
+                ),
             ),
         )
         return output
@@ -118,39 +128,64 @@ class NpcPerformerAgent:
         store = self.world_state.get_store_copy()
         character = store.characters[npc_id]
         turn_id = output.system_output.turn_id
-        event_text = self._build_event_text(agent_input=agent_input, output=output)
+        pending = output.system_output.pending_side_effects
+        event_text = (pending.current_event or "").strip()
         timestamp = int(datetime.now().timestamp())
 
-        character.memory.current_event = event_text
-        if event_text:
+        character.memory.current_event = event_text or None
+        if event_text and pending.append_short:
             character.memory.short.append(event_text)
             character.memory.short = character.memory.short[-self.memory_turns :]
+        if event_text and pending.append_short_log:
             character.memory.short_log.append(ShortLogItem(turn=turn_id, event=event_text))
             character.memory.short_log = character.memory.short_log[-self.shortlog_turns :]
+        if event_text and pending.append_log:
             character.memory.log.append(MemoryLogItem(turn=turn_id, content=event_text, timestamp=timestamp))
 
-        character.goal = self._apply_goal_updates(character.goal, output.llm_output)
+        character.goal = self._apply_goal_updates(
+            character.goal,
+            pending.next_base_goal,
+            pending.next_active_goal,
+        )
         self.world_state.commit_store(store=store)
 
-    def _build_event_text(self, *, agent_input: NpcPerformerAgentInput, output: NpcPerformerAgentOutput) -> str:
-        extra_context = agent_input.llm_input.e4.extra_npc_context.get(output.system_output.id)
-        action_text = (output.llm_output.action_text or "").strip()
+    def _build_event_text(self, *, agent_input: NpcPerformerAgentInput, llm_output: NpcPerformerAgentLlmOutput, npc_id: str) -> str:
+        extra_context = agent_input.llm_input.e4.extra_npc_context.get(npc_id)
+        action_text = (llm_output.action_text or "").strip()
         if extra_context and action_text:
             return f"{extra_context} | {action_text}"
         return extra_context or action_text
 
+    def _build_pending_side_effects(
+        self,
+        *,
+        agent_input: NpcPerformerAgentInput,
+        llm_output: NpcPerformerAgentLlmOutput,
+        npc_id: str,
+    ) -> NpcPerformerPendingSideEffects:
+        event_text = self._build_event_text(agent_input=agent_input, llm_output=llm_output, npc_id=npc_id).strip()
+        has_event = bool(event_text)
+        return NpcPerformerPendingSideEffects(
+            current_event=event_text,
+            append_short=has_event,
+            append_short_log=has_event,
+            append_log=has_event,
+            next_base_goal=llm_output.change_basic_goal,
+            next_active_goal=llm_output.change_active_goal,
+        )
+
     @staticmethod
-    def _apply_goal_updates(goal: Goal, llm_output: NpcPerformerAgentLlmOutput) -> Goal:
+    def _apply_goal_updates(goal: Goal, next_base_goal: Optional[str], next_active_goal: Optional[str]) -> Goal:
         updated_goal = goal.model_copy(deep=True)
         NpcPerformerAgent._update_goal_field(
             goal=updated_goal,
             field_name="base_goal",
-            new_value=llm_output.change_basic_goal,
+            new_value=next_base_goal,
         )
         NpcPerformerAgent._update_goal_field(
             goal=updated_goal,
             field_name="active_goal",
-            new_value=llm_output.change_active_goal,
+            new_value=next_active_goal,
         )
         return updated_goal
 

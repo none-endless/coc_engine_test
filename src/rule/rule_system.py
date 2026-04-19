@@ -5,7 +5,7 @@ from random import Random
 from typing import Any, Dict, Optional, Tuple
 
 from src.data.model.agent_output import CocCheckParticipant, CocCheckResult
-from src.data.model.world_state import WorldState
+from src.data.model.world_state import WorldSnapshot, WorldState
 
 from .dsl import DslEngine
 
@@ -32,12 +32,13 @@ class RuleSystem:
         payload["elapsed_ms"] = (time.perf_counter() - started) * 1000
         return payload
 
-    def evaluate_assert(self, expression: str, snapshot: Dict[str, Any]) -> bool:
+    def evaluate_assert(self, expression: str, snapshot: WorldSnapshot | Dict[str, Any]) -> bool:
         """在指定快照版本上执行只读条件表达式。"""
+        expected_version = snapshot.version if isinstance(snapshot, WorldSnapshot) else snapshot.get("version")
         return self.dsl_engine.evaluate(
             expression=expression,
             snapshot=snapshot,
-            expected_version=snapshot.get("version"),
+            expected_version=expected_version,
         )
 
     def run_coc_check(

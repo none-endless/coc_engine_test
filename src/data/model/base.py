@@ -222,6 +222,11 @@ class MapEntity(EntityIdMixin):
     - 采用命名空间，如 quest.stage、combat.tags。
     """
     ENTITY_PREFIX: ClassVar[str] = "map"
+    WRITABLE_PATHS: ClassVar[tuple[str, ...]] = (
+        "description.add",
+        "connections[*].is_locked",
+        "extensions.*",
+    )
 
     id: str = Field(default="", description="地图 ID")
     name: str = Field(default="", description="地图名称")
@@ -249,6 +254,11 @@ class ItemEntity(EntityIdMixin):
     - 采用命名空间扩展字段。
     """
     ENTITY_PREFIX: ClassVar[str] = "item"
+    WRITABLE_PATHS: ClassVar[tuple[str, ...]] = (
+        "location",
+        "description.add",
+        "extensions.*",
+    )
 
     id: str = Field(default="", description="物品 ID")
     name: str = Field(default="", description="物品名称")
@@ -275,6 +285,13 @@ class CharacterEntity(EntityIdMixin):
     - Agent 只能写被标记为 mutable 的扩展字段。
     """
     ENTITY_PREFIX: ClassVar[str] = "char"
+    WRITABLE_PATHS: ClassVar[tuple[str, ...]] = (
+        "location",
+        "description.add",
+        "attributes.*.value",
+        "status.*.value",
+        "extensions.*",
+    )
 
     id: str = Field(default="", description="角色 ID")
     name: str = Field(default="", description="角色名称")

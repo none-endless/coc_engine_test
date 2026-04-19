@@ -78,11 +78,3 @@ class NarrativeInfo(BaseModel):
     def get_recent_narratives(self, count: int = 5) -> List[NarrativeEntry]:
         """获取最近 n 条叙事记录。"""
         return self.recent[-count:]
-
-
-class NarrativeHistory(BaseModel):
-    """用于 merger_agent 记录完整叙事因果链。"""
-
-    turn: int = Field(description="回合数")
-    narratives: List[NarrativeEntry] = Field(default_factory=list, description="本回合的所有叙事条目")
-    causality_chain: str = Field(default="", description="因果链描述")

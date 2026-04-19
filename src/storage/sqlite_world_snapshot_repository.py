@@ -6,6 +6,8 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from src.data.model.world_state import WorldSnapshot
+
 
 class SqliteWorldSnapshotRepository:
     """世界真值快照 SQLite 仓储，用于与叙事真值物理隔离存储。"""
@@ -42,8 +44,9 @@ class SqliteWorldSnapshotRepository:
             )
             connection.commit()
 
-    def save_snapshot(self, snapshot: Dict[str, Any]) -> None:
+    def save_snapshot(self, snapshot: WorldSnapshot | Dict[str, Any]) -> None:
         """把当前世界快照写入 SQLite，供回放和双真值池验证使用。"""
+        payload = snapshot.to_payload() if isinstance(snapshot, WorldSnapshot) else dict(snapshot)
         with closing(self._connect()) as connection:
             connection.execute(
                 """
@@ -51,9 +54,9 @@ class SqliteWorldSnapshotRepository:
                 VALUES (?, ?, ?)
                 """,
                 (
-                    int(snapshot.get("version", 0)),
-                    str(snapshot.get("snapshot_at", "")),
-                    json.dumps(snapshot, ensure_ascii=False),
+                    int(payload.get("version", 0)),
+                    str(payload.get("snapshot_at", "")),
+                    json.dumps(payload, ensure_ascii=False),
                 ),
             )
             connection.commit()

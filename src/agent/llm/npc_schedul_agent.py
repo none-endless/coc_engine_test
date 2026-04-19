@@ -10,7 +10,6 @@ from src.data.model.world_state import WorldState
 
 
 DEXTERITY_ATTRIBUTE_KEYS = {"dexterity", "敏捷"}
-BLOCKING_STATUS_KEYS = {"hp", "health", "生命", "san", "sanity", "理智"}
 
 
 class NpcSchedulerAgent:
@@ -22,11 +21,17 @@ class NpcSchedulerAgent:
         world_state: WorldState,
         max_actions_per_turn: int = 3,
         cooldown_turns: int = 1,
+        dexterity_attribute_keys: Optional[Iterable[str]] = None,
     ) -> None:
         self.llm_service = llm_service
         self.world_state = world_state
         self.max_actions_per_turn = max(1, int(max_actions_per_turn))
         self.cooldown_turns = max(0, int(cooldown_turns))
+        self.dexterity_attribute_keys = {
+            str(value).strip().lower()
+            for value in (dexterity_attribute_keys or DEXTERITY_ATTRIBUTE_KEYS)
+            if str(value).strip()
+        } or set(DEXTERITY_ATTRIBUTE_KEYS)
         self._npc_last_scheduled_turn: Dict[str, int] = {}
 
     def run(self, *, agent_input: NpcSchedulerAgentInput) -> NpcSchedulerAgentOutput:
@@ -91,12 +96,12 @@ class NpcSchedulerAgent:
 
     def _npc_exists(self, npc_id: str) -> bool:
         snapshot = self.world_state.get_snapshot()
-        return npc_id in snapshot.get("characters", {})
+        return npc_id in snapshot.characters
 
     def _is_schedule_available(self, *, npc_id: str, turn_id: int) -> bool:
-        """过滤死亡、理智归零或仍在冷却中的 NPC。"""
+        """过滤任意状态归零或仍在冷却中的 NPC。"""
         character = self.world_state.get_character(npc_id)
-        if self._has_zero_blocking_status(character.status.values()):
+        if self._has_zero_status(character.status.values()):
             return False
 
         last_turn = self._npc_last_scheduled_turn.get(npc_id)
@@ -113,21 +118,17 @@ class NpcSchedulerAgent:
         indexed_candidates.sort(key=lambda item: (-item[2], item[0]))
         return [npc_id for _, npc_id, _ in indexed_candidates]
 
-    @staticmethod
-    def _get_dexterity_value(attributes: Iterable[object]) -> int:
+    def _get_dexterity_value(self, attributes: Iterable[object]) -> int:
         for attribute in attributes:
             attr_id = str(getattr(attribute, "id", "")).strip().lower()
             attr_name = str(getattr(attribute, "name", "")).strip().lower()
-            if attr_id in DEXTERITY_ATTRIBUTE_KEYS or attr_name in DEXTERITY_ATTRIBUTE_KEYS:
+            if attr_id in self.dexterity_attribute_keys or attr_name in self.dexterity_attribute_keys:
                 return int(getattr(attribute, "value", 0))
         return 0
 
     @staticmethod
-    def _has_zero_blocking_status(statuses: Iterable[object]) -> bool:
+    def _has_zero_status(statuses: Iterable[object]) -> bool:
         for status in statuses:
-            status_id = str(getattr(status, "id", "")).strip().lower()
-            status_name = str(getattr(status, "name", "")).strip().lower()
-            if status_id in BLOCKING_STATUS_KEYS or status_name in BLOCKING_STATUS_KEYS:
-                if int(getattr(status, "value", 0)) <= 0:
-                    return True
+            if int(getattr(status, "value", 0)) <= 0:
+                return True
         return False

@@ -188,6 +188,17 @@ class WorldDataProvider:
         """
         map_entity = self.world_state.get_map(map_id)
         entities = []
+        extension_registry = self.world_state.get_store_copy().extension_registry
+
+        def _is_mutable_extension(key: str) -> bool:
+            if extension_registry is None:
+                return True
+            spec = extension_registry.fields.get(key)
+            if spec is None:
+                return False
+            return bool(spec.mutable)
+
+        map_writable_paths = set(getattr(type(map_entity), "WRITABLE_PATHS", ()))
         move_target_ids = [
             target_id
             for target_id in (
@@ -201,26 +212,43 @@ class WorldDataProvider:
         move_targets_hint = "、".join(move_target_ids)
 
         # 1. 地图实体
-        map_writable_fields = [
-            WritableFieldInfo(
-                field_path="description.add",
-                field_name="暂存描述",
-                current_value=[{"turn": a.turn, "content": a.content} for a in map_entity.description.add],
-                value_type="list",
-                description="暂存的描述变化，等待合并入 public"
-            ),
-        ]
-        # 添加 connections 相关字段
-        for i, conn in enumerate(map_entity.connections):
-            map_writable_fields.extend([
+        map_writable_fields: List[WritableFieldInfo] = []
+        if "description.add" in map_writable_paths:
+            map_writable_fields.append(
                 WritableFieldInfo(
-                    field_path=f"connections[{i}].is_locked",
-                    field_name=f"连接「{conn.name}」锁定状态",
-                    current_value=conn.is_locked,
-                    value_type="boolean",
-                    description=f"方向 {conn.direction}，描述：{conn.description}"
-                ),
-            ])
+                    field_path="description.add",
+                    field_name="暂存描述",
+                    current_value=[{"turn": a.turn, "content": a.content} for a in map_entity.description.add],
+                    value_type="list",
+                    description="暂存的描述变化，等待合并入 public"
+                )
+            )
+
+        if "connections[*].is_locked" in map_writable_paths:
+            for i, conn in enumerate(map_entity.connections):
+                map_writable_fields.append(
+                    WritableFieldInfo(
+                        field_path=f"connections[{i}].is_locked",
+                        field_name=f"连接「{conn.name}」锁定状态",
+                        current_value=conn.is_locked,
+                        value_type="boolean",
+                        description=f"方向 {conn.direction}，描述：{conn.description}"
+                    )
+                )
+
+        if "extensions.*" in map_writable_paths:
+            for key, value in sorted(map_entity.extensions.items()):
+                if not _is_mutable_extension(key):
+                    continue
+                map_writable_fields.append(
+                    WritableFieldInfo(
+                        field_path=f"extensions.{key}",
+                        field_name=f"扩展字段 {key}",
+                        current_value=value,
+                        value_type=self._infer_value_type(value),
+                        description="schema registry 标记为 mutable 的扩展字段"
+                    )
+                )
 
         entities.append(EntityWritableView(
             entity_id=map_entity.id,
@@ -233,40 +261,68 @@ class WorldDataProvider:
         # 2. 角色实体（只获取在当前地图上的）
         characters, items = self._get_visible_entities_at_map(map_id)
         for char in characters:
-            char_writable_fields = [
-                WritableFieldInfo(
-                    field_path="location",
-                    field_name="位置",
-                    current_value=char.location,
-                    value_type="string",
-                    description=f"角色当前所在位置；可选目标地图ID：{move_targets_hint}"
-                ),
-                WritableFieldInfo(
-                    field_path="description.add",
-                    field_name="暂存描述",
-                    current_value=[{"turn": a.turn, "content": a.content} for a in char.description.add],
-                    value_type="list",
-                    description="暂存的描述变化"
-                ),
-            ]
-            # 添加属性字段
-            for attr_id, attr in char.attributes.items():
-                char_writable_fields.append(WritableFieldInfo(
-                    field_path=f"attributes.{attr_id}.value",
-                    field_name=f"{attr.name}",
-                    current_value=attr.value,
-                    value_type="number",
-                    description=attr.description
-                ))
-            # 添加状态字段
-            for status_id, status in char.status.items():
-                char_writable_fields.append(WritableFieldInfo(
-                    field_path=f"status.{status_id}.value",
-                    field_name=f"{status.name}",
-                    current_value=status.value,
-                    value_type="number",
-                    description=status.description
-                ))
+            char_writable_paths = set(getattr(type(char), "WRITABLE_PATHS", ()))
+            char_writable_fields: List[WritableFieldInfo] = []
+
+            if "location" in char_writable_paths:
+                char_writable_fields.append(
+                    WritableFieldInfo(
+                        field_path="location",
+                        field_name="位置",
+                        current_value=char.location,
+                        value_type="string",
+                        description=f"角色当前所在位置；可选目标地图ID：{move_targets_hint}"
+                    )
+                )
+
+            if "description.add" in char_writable_paths:
+                char_writable_fields.append(
+                    WritableFieldInfo(
+                        field_path="description.add",
+                        field_name="暂存描述",
+                        current_value=[{"turn": a.turn, "content": a.content} for a in char.description.add],
+                        value_type="list",
+                        description="暂存的描述变化"
+                    )
+                )
+
+            if "attributes.*.value" in char_writable_paths:
+                for attr_id, attr in char.attributes.items():
+                    char_writable_fields.append(
+                        WritableFieldInfo(
+                            field_path=f"attributes.{attr_id}.value",
+                            field_name=f"{attr.name}",
+                            current_value=attr.value,
+                            value_type="number",
+                            description=attr.description
+                        )
+                    )
+
+            if "status.*.value" in char_writable_paths:
+                for status_id, status in char.status.items():
+                    char_writable_fields.append(
+                        WritableFieldInfo(
+                            field_path=f"status.{status_id}.value",
+                            field_name=f"{status.name}",
+                            current_value=status.value,
+                            value_type="number",
+                            description=status.description
+                        )
+                    )
+
+            if "extensions.*" in char_writable_paths:
+                for key, value in sorted(char.extensions.items()):
+                    if not _is_mutable_extension(key):
+                        continue
+                    char_writable_fields.append(
+                        WritableFieldInfo(
+                            field_path=f"extensions.{key}",
+                            field_name=f"扩展字段 {key}",
+                            current_value=value,
+                            value_type=self._infer_value_type(value),
+                            description="schema registry 标记为 mutable 的扩展字段"
+                        )
+                    )
 
             entities.append(EntityWritableView(
                 entity_id=char.id,
@@ -278,22 +334,41 @@ class WorldDataProvider:
 
         # 3. 物品实体（只获取在当前地图上的，物品在人物身上时不可见）
         for item in items:
-            item_writable_fields = [
-                WritableFieldInfo(
-                    field_path="location",
-                    field_name="位置",
-                    current_value=item.location,
-                    value_type="string",
-                    description=f"物品当前所在位置；可选地图ID：{move_targets_hint}"
-                ),
-                WritableFieldInfo(
-                    field_path="description.add",
-                    field_name="暂存描述",
-                    current_value=[{"turn": a.turn, "content": a.content} for a in item.description.add],
-                    value_type="list",
-                    description="暂存的描述变化"
-                ),
-            ]
+            item_writable_paths = set(getattr(type(item), "WRITABLE_PATHS", ()))
+            item_writable_fields: List[WritableFieldInfo] = []
+            if "location" in item_writable_paths:
+                item_writable_fields.append(
+                    WritableFieldInfo(
+                        field_path="location",
+                        field_name="位置",
+                        current_value=item.location,
+                        value_type="string",
+                        description=f"物品当前所在位置；可选地图ID：{move_targets_hint}"
+                    )
+                )
+            if "description.add" in item_writable_paths:
+                item_writable_fields.append(
+                    WritableFieldInfo(
+                        field_path="description.add",
+                        field_name="暂存描述",
+                        current_value=[{"turn": a.turn, "content": a.content} for a in item.description.add],
+                        value_type="list",
+                        description="暂存的描述变化"
+                    )
+                )
+            if "extensions.*" in item_writable_paths:
+                for key, value in sorted(item.extensions.items()):
+                    if not _is_mutable_extension(key):
+                        continue
+                    item_writable_fields.append(
+                        WritableFieldInfo(
+                            field_path=f"extensions.{key}",
+                            field_name=f"扩展字段 {key}",
+                            current_value=value,
+                            value_type=self._infer_value_type(value),
+                            description="schema registry 标记为 mutable 的扩展字段"
+                        )
+                    )
 
             entities.append(EntityWritableView(
                 entity_id=item.id,
@@ -308,6 +383,18 @@ class WorldDataProvider:
             map_name=map_entity.name,
             entities=entities
         )
+
+    @staticmethod
+    def _infer_value_type(value: Any) -> str:
+        if isinstance(value, bool):
+            return "boolean"
+        if isinstance(value, (int, float)):
+            return "number"
+        if isinstance(value, list):
+            return "list"
+        if isinstance(value, dict):
+            return "object"
+        return "string"
 
     def _get_npc_scheduler_view(self, map_id: str) -> NpcSchedulerWorldView:
         """

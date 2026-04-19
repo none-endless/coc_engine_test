@@ -86,6 +86,9 @@ from src.data.model.input.agent_memory_input import DmMemory
 from src.data.model.input.agent_narrative_input import NarrativeEntry, NarrativeInfo
 from src.data.model.world_state import WorldState
 from src.engine.bootstrap_validation import validate_required_dexterity
+from src.engine.consistency_orchestrator import ConsistencyOrchestrator
+from src.engine.narrative_truth_manager import NarrativeTruthManager
+from src.engine.turn_orchestrator import TurnOrchestrator
 from src.interface.narrative_stream_interface import NarrativeStreamInterface
 from src.rule.input_system import InputSystem
 from src.rule.rule_system import RuleSystem
@@ -113,16 +116,25 @@ class Engine:
         enable_persistence: bool = False,
     ) -> None:
         self.world_state = world_state
-        validate_required_dexterity(world_state)
-        self.mode = mode
-        self.rule_system = RuleSystem(world_state=world_state)
-        self.world_provider = WorldDataProvider(world_state=world_state)
+
+        cfg = getattr(llm_service, "config", None) if llm_service is not None else None
+        if cfg is None:
+            cfg = ConfigLoader.load(config_path=config_path)
 
         if llm_service is None:
-            cfg = ConfigLoader.load(config_path=config_path)
             llm_service = LLMServiceBase(config=cfg, io_recorder=io_logger)
         elif io_logger is not None and hasattr(llm_service, "io_recorder") and getattr(llm_service, "io_recorder", None) is None:
             setattr(llm_service, "io_recorder", io_logger)
+
+        self.config = cfg
+        validate_required_dexterity(
+            world_state,
+            dexterity_attribute_keys=self.config.system.dexterity_attribute_keys,
+        )
+
+        self.mode = mode
+        self.rule_system = RuleSystem(world_state=world_state)
+        self.world_provider = WorldDataProvider(world_state=world_state)
 
         self.dm_agent = DMAgent(llm_service=llm_service, max_retries=dm_max_retries)
         self.evolution_agent = EvolutionAgent(llm_service=llm_service)
@@ -133,14 +145,13 @@ class Engine:
 
         self.input_system = InputSystem(rule_system=self.rule_system, dm_handler=self._dm_handler)
 
-        cfg = getattr(self.dm_agent.llm_service, "config", None)
-        if cfg is None:
-            cfg = ConfigLoader.load(config_path=config_path)
-        self.config = cfg
         self._enable_persistence = bool(enable_persistence)
         self._dm_memory = DmMemory(memory_turns=self.config.agent.dm.memory_turns)
         self._world_snapshot_repository = self._build_world_snapshot_repository()
         self._narrative_repository = self._build_narrative_repository()
+        self._turn_orchestrator = TurnOrchestrator(self._run_phase3_turn_async)
+        self._consistency_orchestrator = ConsistencyOrchestrator(self._run_consistency_cycle)
+        self._narrative_truth_manager = NarrativeTruthManager()
 
         self.state_agent = StateChangeAgent(llm_service=self.dm_agent.llm_service)
         self.consistency_agent = ConsistencyAgent(llm_service=self.dm_agent.llm_service)
@@ -149,6 +160,7 @@ class Engine:
             world_state=self.world_state,
             max_actions_per_turn=int(self.config.agent.npc.max_actions_per_turn),
             cooldown_turns=int(self.config.agent.npc.cooldown_turns),
+            dexterity_attribute_keys=self.config.system.dexterity_attribute_keys,
         )
         self.npc_performer_agent = NpcPerformerAgent(
             llm_service=self.dm_agent.llm_service,
@@ -230,15 +242,17 @@ class Engine:
 
     def _restore_narrative_info_from_storage(self) -> None:
         """启动时从叙事仓储恢复 NarrativeInfo，保证 narrative truth 可跨进程保留。"""
-        if self._narrative_repository is None:
-            return
-        self._narrative_info = self._narrative_repository.load()
+        self._narrative_info = self._narrative_truth_manager.restore(
+            repository=self._narrative_repository,
+            current=self._narrative_info,
+        )
 
     def _persist_narrative_info(self) -> None:
         """把当前 NarrativeInfo 同步写入独立 SQLite 仓储。"""
-        if self._narrative_repository is None:
-            return
-        self._narrative_repository.save(self._narrative_info)
+        self._narrative_truth_manager.persist(
+            repository=self._narrative_repository,
+            narrative_info=self._narrative_info,
+        )
 
     def _persist_world_snapshot(self) -> None:
         """把当前世界快照写入独立 world snapshot SQLite 仓储。"""
@@ -290,6 +304,8 @@ class Engine:
         for item in add_items:
             if isinstance(item, dict):
                 content = self._normalize_consistency_text(item.get("content", ""))
+            elif hasattr(item, "content"):
+                content = self._normalize_consistency_text(getattr(item, "content", ""))
             else:
                 content = self._normalize_consistency_text(item)
             if content:
@@ -315,16 +331,16 @@ class Engine:
         shortlog_threshold = self._consistency_shortlog_threshold
 
         description_candidates: List[ConsistencyDescriptionCandidate] = []
-        for bucket in ("maps", "characters", "items"):
-            for entity_id, payload in snapshot.get(bucket, {}).items():
-                add_items = payload.get("description", {}).get("add", [])
+        for bucket_values in (snapshot.maps, snapshot.characters, snapshot.items):
+            for entity_id, payload in bucket_values.items():
+                add_items = payload.description.add
                 if len(add_items) > description_threshold:
                     add_entries = self._extract_snapshot_description_entries(add_items)
                     if not add_entries:
                         continue
                     public_entries = [
                         self._normalize_consistency_text(text)
-                        for text in payload.get("description", {}).get("public", [])
+                        for text in payload.description.public
                     ]
                     description_candidates.append(
                         ConsistencyDescriptionCandidate(
@@ -335,8 +351,8 @@ class Engine:
                     )
 
         key_facts_candidates: List[ConsistencyKeyFactsCandidate] = []
-        for char_id, payload in snapshot.get("characters", {}).items():
-            short_log = payload.get("memory", {}).get("short_log", [])
+        for char_id, payload in snapshot.characters.items():
+            short_log = payload.memory.short_log
             if len(short_log) > shortlog_threshold:
                 short_log_entries = self._extract_snapshot_shortlog_events(short_log)
                 if not short_log_entries:
@@ -346,7 +362,7 @@ class Engine:
                         character_id=char_id,
                         key_facts=[
                             self._normalize_consistency_text(item)
-                            for item in payload.get("memory", {}).get("key_facts", [])
+                            for item in payload.memory.key_facts
                             if self._normalize_consistency_text(item)
                         ],
                         short_log=short_log_entries,
@@ -634,7 +650,7 @@ class Engine:
                 ],
                 valid_characters=[
                     AvailableCharacterRef(id=char_id, name=self.world_state.get_character(char_id).name)
-                    for char_id in sorted(self.world_state.get_snapshot().get("characters", {}).keys())
+                    for char_id in sorted(self.world_state.get_snapshot().characters.keys())
                 ],
             ),
             system_input=DmAgentSystemInput(
@@ -649,13 +665,7 @@ class Engine:
             ),
         )
 
-        available_attrs = sorted(actor.attributes.keys())
-        valid_ids = set(self.world_state.get_snapshot().get("characters", {}).keys())
-        analyzed = self.dm_agent.run(
-            agent_input=dm_input,
-            available_attributes=available_attrs,
-            valid_character_ids=valid_ids,
-        )
+        analyzed = self.dm_agent.run(agent_input=dm_input)
         self._update_dm_memory(
             turn_id=envelope.turn,
             actor_id=self._current_actor_id,
@@ -719,7 +729,7 @@ class Engine:
                 trace_id=trace_id,
                 causality_chain=normalized_chain,
             )
-        return await self._run_phase3_turn_async(
+        return await self._turn_orchestrator.run_phase3_turn_async(
             raw_input=raw_input,
             actor_id=actor_id,
             turn_id=turn_id,
@@ -789,7 +799,7 @@ class Engine:
         trace_id: int,
     ) -> Dict[str, Any]:
         self._current_actor_id = actor_id
-        world_version = int(self.world_state.get_snapshot().get("version", 0))
+        world_version = int(self.world_state.get_snapshot().version)
 
         routed = self.input_system.dispatch(
             raw_input=raw_input,
@@ -1094,7 +1104,7 @@ class Engine:
         performer_chain: List[NpcPerformerChainResult] = []
         npc_visible_narratives: List[str] = []
         if fallback_error is None:
-            performer_out, performer_chain = await self._run_performer_branch(
+            performer_out, performer_chain, npc_fallback_error = await self._run_performer_branch(
                 scheduler_out=scheduler_out,
                 source_actor_id=actor_id,
                 turn_id=turn_id,
@@ -1103,11 +1113,14 @@ class Engine:
                 branch_logs=branch_logs,
                 narrative_stream_events=narrative_stream_events,
             )
-            npc_visible_narratives = self._collect_npc_visible_narrative_texts(performer_chain)
-            merger_chain = self._merge_e7_chains(
-                base_chain=merger_chain,
-                extra_chains=[chain_item.e7 for chain_item in performer_chain],
-            )
+            if npc_fallback_error is not None:
+                fallback_error = npc_fallback_error
+            else:
+                npc_visible_narratives = self._collect_npc_visible_narrative_texts(performer_chain)
+                merger_chain = self._merge_e7_chains(
+                    base_chain=merger_chain,
+                    extra_chains=[chain_item.e7 for chain_item in performer_chain],
+                )
 
         narrative_fragments = self._collect_narrative_fragments_from_events(narrative_stream_events)
         aggregated_raw = self._compose_fragment_aggregate_text(narrative_fragments)
@@ -1193,7 +1206,10 @@ class Engine:
 
         consistency_payload = None
         if fallback_error is None:
-            consistency_payload = await self._run_consistency_cycle(turn_id=turn_id, trace_id=trace_id)
+            consistency_payload = await self._consistency_orchestrator.run_consistency_cycle(
+                turn_id=turn_id,
+                trace_id=trace_id,
+            )
             if (
                 consistency_payload is not None
                 and consistency_payload.get("blocked")
@@ -1281,7 +1297,7 @@ class Engine:
             target_id = participant_ids[1]
             if target_id == actor_id:
                 raise ValueError("against routing requires a target different from actor")
-            if target_id not in self.world_state.get_snapshot().get("characters", {}):
+            if target_id not in self.world_state.get_snapshot().characters:
                 raise ValueError(f"target character not found: {target_id}")
             target = self.world_state.get_character(target_id)
             target_attr = target.attributes.get(attr_name)
@@ -1438,11 +1454,11 @@ class Engine:
         world_version: int,
         branch_logs: List[Dict[str, Any]],
         narrative_stream_events: Optional[List[Dict[str, Any]]] = None,
-    ) -> Tuple[List[NpcPerformerAgentOutput], List[NpcPerformerChainResult]]:
-        """执行 NPC performer，并在 state 成功后统一提交 NPC 目标与记忆副作用。"""
+    ) -> Tuple[List[NpcPerformerAgentOutput], List[NpcPerformerChainResult], Optional[Dict[str, Any]]]:
+        """执行 NPC 串行链路：每个 NPC 都在自身状态提交完成后才激活下一个 NPC。"""
         scheduled_npc_ids = scheduler_out.llm_output.step_result.scheduled_npc_ids
         if not scheduled_npc_ids:
-            return [], []
+            return [], [], None
 
         outputs: List[NpcPerformerAgentOutput] = []
         downstream_chain: List[NpcPerformerChainResult] = []
@@ -1450,10 +1466,11 @@ class Engine:
         started_at = datetime.now(timezone.utc).isoformat()
 
         for npc_id in scheduled_npc_ids:
+            current_world_version = int(self.world_state.get_version())
             npc_character = self.world_state.get_character(npc_id)
             valid_character_refs = [
                 AvailableCharacterRef(id=char_id, name=self.world_state.get_character(char_id).name)
-                for char_id in sorted(self.world_state.get_snapshot().get("characters", {}).keys())
+                for char_id in sorted(self.world_state.get_snapshot().characters.keys())
             ]
             npc_input = NpcPerformerAgentInput(
                 identity=AgentIdentity(id="npcperformer", skill="execute npc behavior"),
@@ -1483,7 +1500,7 @@ class Engine:
                         e1=E1InputInfo(
                             turn_id=turn_id,
                             trace_id=trace_id,
-                            world_version=world_version,
+                            world_version=current_world_version,
                             source_id=source_actor_id,
                             raw_text=scheduler_out.llm_output.step_result.summary,
                             metadata={"branch": "npc_performer"},
@@ -1492,7 +1509,7 @@ class Engine:
                     execution=SystemExecutionMeta(
                         turn_id=turn_id,
                         trace_id=trace_id,
-                        world_version=world_version,
+                        world_version=current_world_version,
                         debug={"branch": "npc_performer", "npc_id": npc_id},
                     ),
                 ),
@@ -1506,15 +1523,129 @@ class Engine:
                 output,
                 turn_id,
                 trace_id,
-                world_version,
+                current_world_version,
                 narrative_stream_events,
             )
             downstream_chain.append(chain_result)
-            await asyncio.to_thread(
-                self.npc_performer_agent.apply_side_effects,
-                agent_input=npc_input,
-                output=output,
+
+            refreshed_npc = self.world_state.get_character(npc_id)
+            npc_views = self.world_provider.precompute_all_views(current_map_id=refreshed_npc.location, turn=turn_id)
+            npc_checkpoint = self.world_state.capture_checkpoint()
+            npc_state_input = StateAgentInput(
+                identity=AgentIdentity(id="state", skill="generate state patch"),
+                llm_input=StateAgentLlmInput(
+                    e4=E4EvolutionLlmView(summary=chain_result.evolution_summary),
+                    world_info=npc_views.state_agent_view,
+                    fallback_error=None,
+                ),
+                system_input=StateAgentSystemInput(
+                    chain_raw=StateChangeAgentChainInput(
+                        e4=E4EvolutionStepResult(summary=chain_result.evolution_summary),
+                        fallback_error=None,
+                    ),
+                    retry_control=SystemRetryControl(
+                        can_retry=True,
+                        retry_budget=self.config.system.max_retry_count,
+                    ),
+                    execution=SystemExecutionMeta(
+                        turn_id=turn_id,
+                        trace_id=trace_id,
+                        world_version=int(npc_checkpoint["version"]),
+                        debug={"branch": "npc_state", "npc_id": npc_id},
+                    ),
+                ),
             )
+            npc_state_result = await self._run_state_branch(npc_state_input, npc_checkpoint, branch_logs)
+            npc_fallback = npc_state_result.get("fallback_error")
+            if npc_fallback is not None:
+                ended = time.perf_counter()
+                branch_logs.append(
+                    {
+                        "branch": "npc_performer",
+                        "turn_id": turn_id,
+                        "trace_id": trace_id,
+                        "started_at": started_at,
+                        "duration_ms": round((ended - started) * 1000, 3),
+                        "npc_ids": list(scheduled_npc_ids),
+                        "stopped_at_npc_id": npc_id,
+                        "stopped_reason": "npc_state_fallback",
+                    }
+                )
+                return (
+                    outputs,
+                    downstream_chain,
+                    {
+                        "code": "NPC_STATE_PATCH_FAILED",
+                        "message": npc_fallback.get("message", self.config.system.fallback_error),
+                        "retry_count": int(npc_fallback.get("retry_count", 0)),
+                        "retriable": False,
+                        "rollback_applied": bool(npc_fallback.get("rollback_applied", True)),
+                        "degraded_output": npc_fallback.get("degraded_output", self.config.system.fallback_error),
+                        "details": {
+                            "phase": "npc_state",
+                            "npc_id": npc_id,
+                            "origin": npc_fallback,
+                        },
+                    },
+                )
+
+            try:
+                await asyncio.to_thread(
+                    self.npc_performer_agent.apply_side_effects,
+                    agent_input=npc_input,
+                    output=output,
+                )
+            except Exception as exc:
+                async with self._state_commit_lock:
+                    await asyncio.to_thread(self.world_state.restore_checkpoint, npc_checkpoint)
+                self._persist_world_snapshot()
+
+                ended = time.perf_counter()
+                branch_logs.append(
+                    {
+                        "branch": "npc_performer",
+                        "turn_id": turn_id,
+                        "trace_id": trace_id,
+                        "started_at": started_at,
+                        "duration_ms": round((ended - started) * 1000, 3),
+                        "npc_ids": list(scheduled_npc_ids),
+                        "stopped_at_npc_id": npc_id,
+                        "stopped_reason": "npc_side_effects_failed",
+                    }
+                )
+                self._record_io(
+                    kind="agent_io",
+                    agent_name="npc_performer",
+                    input_data=npc_input,
+                    output_data=output,
+                    extra={
+                        "branch": "npc_performer",
+                        "turn_id": turn_id,
+                        "trace_id": trace_id,
+                        "npc_id": npc_id,
+                        "npc_state": npc_state_result,
+                        "apply_status": "side_effects_failed",
+                        "error": str(exc),
+                    },
+                )
+                return (
+                    outputs,
+                    downstream_chain,
+                    {
+                        "code": "NPC_SIDE_EFFECTS_FAILED",
+                        "message": self.config.system.fallback_error,
+                        "retry_count": 0,
+                        "retriable": False,
+                        "rollback_applied": True,
+                        "degraded_output": self.config.system.fallback_error,
+                        "details": {
+                            "phase": "npc_performer",
+                            "npc_id": npc_id,
+                            "origin": str(exc),
+                        },
+                    },
+                )
+
             self._record_io(
                 kind="agent_io",
                 agent_name="npc_performer",
@@ -1525,6 +1656,7 @@ class Engine:
                     "turn_id": turn_id,
                     "trace_id": trace_id,
                     "npc_id": npc_id,
+                    "npc_state": npc_state_result,
                 },
             )
 
@@ -1539,7 +1671,7 @@ class Engine:
                 "npc_ids": list(scheduled_npc_ids),
             }
         )
-        return outputs, downstream_chain
+        return outputs, downstream_chain, None
 
     def _run_npc_performer_downstream(
         self,
@@ -1755,7 +1887,7 @@ class Engine:
             target_id = participant_ids[1]
             if target_id == actor_id:
                 raise ValueError("npc against routing requires target id")
-            if target_id not in self.world_state.get_snapshot().get("characters", {}):
+            if target_id not in self.world_state.get_snapshot().characters:
                 raise ValueError(f"npc against target not found: {target_id}")
             target = self.world_state.get_character(target_id)
             target_attr = target.attributes.get(attr_name)

@@ -30,15 +30,13 @@ class DMAgent:
 	def run(
 		self,
 		agent_input: DmAgentInput,
-		*,
-		available_attributes: List[str],
-		valid_character_ids: Set[str],
 	) -> DmAnalyzeResult:
 		retries = 0
 		errors: List[str] = []
 		feedback: Optional[str] = None
 		attr_ids, attr_name_to_id = self._build_attribute_refs(agent_input.llm_input.available_attributes)
-		char_ids = set(agent_input.llm_input.valid_characters and [char.id for char in agent_input.llm_input.valid_characters] or list(valid_character_ids))
+		available_attributes = sorted(set(attr_ids))
+		char_ids = {char.id for char in agent_input.llm_input.valid_characters if char.id}
 
 		llm_output: Optional[DmAgentLlmOutput] = None
 		for _ in range(self.max_retries + 1):
@@ -61,7 +59,7 @@ class DMAgent:
 				llm_output=llm_output,
 				actor_id=agent_input.llm_input.e1.source_id,
 				available_attributes=available_attributes,
-				valid_character_ids=valid_character_ids,
+				valid_character_ids=char_ids,
 				attribute_name_to_id=attr_name_to_id,
 			)
 			if not errors:

@@ -59,7 +59,13 @@ properties:
         type: integer
         minimum: 1
         default: 10
-    required: [max_retry_count, retry_timeout_ms, fallback_error, snapshot_interval]
+      dexterity_attribute_keys:
+        type: array
+        minItems: 1
+        items:
+          type: string
+        default: [dexterity, 敏捷]
+    required: [max_retry_count, retry_timeout_ms, fallback_error, snapshot_interval, dexterity_attribute_keys]
 
   agent:
     type: object

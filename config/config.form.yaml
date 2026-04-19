@@ -76,6 +76,11 @@ sections:
         required: true
         default: 10
         min: 1
+      - path: system.dexterity_attribute_keys
+        label: Dexterity Attribute Keys
+        type: list
+        required: true
+        default: [dexterity, 敏捷]
 
   - id: agent_dm
     label: Agent - DM

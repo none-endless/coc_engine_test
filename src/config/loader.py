@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +23,7 @@ class SystemConfig(BaseModel):
     retry_timeout_ms: int = Field(default=5000)
     fallback_error: str = Field(default="系统繁忙，请稍后重试")
     snapshot_interval: int = Field(default=10)
+    dexterity_attribute_keys: List[str] = Field(default_factory=lambda: ["dexterity", "敏捷"])
 
 
 class AgentDmConfig(BaseModel):

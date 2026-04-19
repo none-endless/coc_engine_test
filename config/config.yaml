@@ -12,6 +12,9 @@ system:
   retry_timeout_ms: 5000
   fallback_error: 系统繁忙，请稍后重试
   snapshot_interval: 10
+  dexterity_attribute_keys:
+  - dexterity
+  - 敏捷
 
 agent:
   dm:

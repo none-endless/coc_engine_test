@@ -1,26 +1,30 @@
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Optional, Set
 
 from src.data.model.base import CharacterEntity
 from src.data.model.world_state import WorldState
 
 
-DEXTERITY_ATTRIBUTE_IDS = {"dexterity", "敏捷"}
+DEFAULT_DEXTERITY_ATTRIBUTE_IDS = {"dexterity", "敏捷"}
 
 
 class EngineBootstrapError(ValueError):
     """引擎启动前置校验失败。"""
 
 
-def validate_required_dexterity(world_state: WorldState) -> None:
+def validate_required_dexterity(
+    world_state: WorldState,
+    dexterity_attribute_keys: Optional[Iterable[str]] = None,
+) -> None:
     """校验全部角色是否具备敏捷属性，缺失时禁止进入系统。"""
     snapshot = world_state.get_snapshot()
+    normalized_keys = _normalize_attribute_keys(dexterity_attribute_keys)
     missing_character_ids = []
 
-    for char_id in sorted(snapshot.get("characters", {}).keys()):
+    for char_id in sorted(snapshot.characters.keys()):
         character = world_state.get_character(char_id)
-        if not _has_dexterity_attribute(character):
+        if not _has_dexterity_attribute(character, normalized_keys):
             missing_character_ids.append(f"{character.id}({character.name})")
 
     if not missing_character_ids:
@@ -33,17 +37,26 @@ def validate_required_dexterity(world_state: WorldState) -> None:
     )
 
 
-def _has_dexterity_attribute(character: CharacterEntity) -> bool:
+def _has_dexterity_attribute(character: CharacterEntity, dexterity_keys: Set[str]) -> bool:
     """同时兼容属性 id 与展示名中的敏捷标识。"""
     for attr_id, attr in character.attributes.items():
-        if _matches_dexterity_keys([attr_id, attr.id, attr.name]):
+        if _matches_dexterity_keys([attr_id, attr.id, attr.name], dexterity_keys):
             return True
     return False
 
 
-def _matches_dexterity_keys(values: Iterable[str]) -> bool:
+def _matches_dexterity_keys(values: Iterable[str], dexterity_keys: Set[str]) -> bool:
     for value in values:
         normalized = str(value).strip().lower()
-        if normalized in DEXTERITY_ATTRIBUTE_IDS:
+        if normalized in dexterity_keys:
             return True
     return False
+
+
+def _normalize_attribute_keys(values: Optional[Iterable[str]]) -> Set[str]:
+    normalized = {
+        str(value).strip().lower()
+        for value in (values or DEFAULT_DEXTERITY_ATTRIBUTE_IDS)
+        if str(value).strip()
+    }
+    return normalized or set(DEFAULT_DEXTERITY_ATTRIBUTE_IDS)

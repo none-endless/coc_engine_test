@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, Iterator, Optional, Type, TypeVar
@@ -367,21 +368,33 @@ class LLMServiceBase:
             raise ValueError("LLM content is not string")
 
         stripped = content.strip()
-        if stripped.startswith("```"):
-            stripped = stripped.strip("`")
-            if stripped.startswith("json"):
-                stripped = stripped[4:].strip()
+        candidates: list[str] = []
+
+        fenced_matches = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", stripped, flags=re.IGNORECASE | re.DOTALL)
+        candidates.extend(fenced_matches)
 
         start = stripped.find("{")
         end = stripped.rfind("}")
-        if start == -1 or end == -1 or end <= start:
+        if start != -1 and end != -1 and end > start:
+            candidates.append(stripped[start : end + 1])
+
+        if not candidates:
             raise ValueError("LLM content does not contain JSON object")
 
-        payload = stripped[start : end + 1]
-        parsed = json.loads(payload)
-        if not isinstance(parsed, dict):
-            raise ValueError("LLM JSON root must be object")
-        return parsed
+        last_error: Optional[Exception] = None
+        for payload in candidates:
+            try:
+                parsed = json.loads(payload)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+            last_error = ValueError("LLM JSON root must be object")
+
+        if last_error is not None:
+            raise ValueError(f"LLM content contains invalid JSON object: {last_error}") from last_error
+        raise ValueError("LLM content does not contain JSON object")
 
     @staticmethod
     def _extract_stream_text_delta(value: Any) -> str:

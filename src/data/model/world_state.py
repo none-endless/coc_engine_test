@@ -5,7 +5,29 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel, Field
+
 from .base import CharacterEntity, ItemEntity, MapEntity, WorldEntityStore
+
+
+class WorldSnapshot(BaseModel):
+    """Typed world snapshot shared across read-only consumers."""
+
+    version: int = Field(default=0)
+    snapshot_at: str = Field(default="")
+    maps: Dict[str, MapEntity] = Field(default_factory=dict)
+    characters: Dict[str, CharacterEntity] = Field(default_factory=dict)
+    items: Dict[str, ItemEntity] = Field(default_factory=dict)
+
+    def to_payload(self) -> Dict[str, Any]:
+        """Serialize snapshot for storage and JSON-based processors."""
+        return self.model_dump(mode="json")
+
+    def __getitem__(self, key: str) -> Any:
+        return self.to_payload()[key]
+
+    def get(self, key: str, default: Optional[Any] = None) -> Any:
+        return self.to_payload().get(key, default)
 
 
 class WorldState:
@@ -28,7 +50,7 @@ class WorldState:
         self._write_lock = threading.RLock()
         self._store = (initial_store.model_copy(deep=True) if initial_store else WorldEntityStore())
         self._version = 0
-        self._snapshot_cache = {}
+        self._snapshot_cache = WorldSnapshot()
         self._initialized = True
 
         with self._write_lock:
@@ -117,9 +139,9 @@ class WorldState:
                 result.append(conn.id)
         return result
 
-    def get_snapshot(self) -> Dict[str, object]:
+    def get_snapshot(self) -> WorldSnapshot:
         """Return an immutable-by-copy snapshot for lock-free readers."""
-        return copy.deepcopy(self._snapshot_cache)
+        return self._snapshot_cache.model_copy(deep=True)
 
     def get_version(self) -> int:
         """Return current world version."""
@@ -176,19 +198,19 @@ class WorldState:
             map_entity.item_index = sorted(item_index[map_id])
 
     def _refresh_snapshot_locked(self) -> None:
-        self._snapshot_cache = {
-            "version": self._version,
-            "snapshot_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "maps": {
-                map_id: map_entity.model_dump(mode="json")
+        self._snapshot_cache = WorldSnapshot(
+            version=self._version,
+            snapshot_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            maps={
+                map_id: map_entity.model_copy(deep=True)
                 for map_id, map_entity in self._store.maps.items()
             },
-            "characters": {
-                char_id: char.model_dump(mode="json")
+            characters={
+                char_id: char.model_copy(deep=True)
                 for char_id, char in self._store.characters.items()
             },
-            "items": {
-                item_id: item.model_dump(mode="json")
+            items={
+                item_id: item.model_copy(deep=True)
                 for item_id, item in self._store.items.items()
             },
-        }
+        )

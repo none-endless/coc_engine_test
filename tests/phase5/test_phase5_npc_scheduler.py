@@ -83,6 +83,16 @@ class TestPhase5NpcScheduler(unittest.TestCase):
             attributes={"dexterity": Attribute(id="dexterity", name="敏捷", value=99, max_value=100, min_value=0)},
             status={"health": Status(id="health", name="生命", value=0, max_value=10, min_value=0)},
         )
+        npc_custom_zero = CharacterEntity(
+            id="char-custom_zero-0005",
+            name="疲惫者",
+            location=room.id,
+            attributes={"dexterity": Attribute(id="dexterity", name="敏捷", value=95, max_value=100, min_value=0)},
+            status={
+                "health": Status(id="health", name="生命", value=10, max_value=10, min_value=0),
+                "fatigue": Status(id="fatigue", name="疲劳", value=0, max_value=10, min_value=0),
+            },
+        )
 
         self.world = WorldState()
         self.world.reset(
@@ -93,6 +103,7 @@ class TestPhase5NpcScheduler(unittest.TestCase):
                     npc_b.id: npc_b,
                     npc_c.id: npc_c,
                     npc_dead.id: npc_dead,
+                    npc_custom_zero.id: npc_custom_zero,
                 },
                 items={},
             )
@@ -177,6 +188,29 @@ class TestPhase5NpcScheduler(unittest.TestCase):
         third_input.system_input.execution.turn_id = 12
         third_output = agent.run(agent_input=third_input)
         self.assertEqual(third_output.llm_output.step_result.scheduled_npc_ids, ["char-fast-0001", "char-mid-0002"])
+
+    def test_scheduler_filters_any_zero_status_not_only_health_sanity(self):
+        service = SchedulerFakeLLMService(
+            scheduled_npc_ids=["char-custom_zero-0005", "char-fast-0001", "char-mid-0002"],
+            extra_npc_context={
+                "char-custom_zero-0005": "custom",
+                "char-fast-0001": "fast",
+                "char-mid-0002": "mid",
+            },
+        )
+        agent = NpcSchedulerAgent(
+            llm_service=service,
+            world_state=self.world,
+            max_actions_per_turn=3,
+            cooldown_turns=0,
+        )
+
+        run_input = self._build_input()
+        run_input.system_input.execution.turn_id = 20
+        output = agent.run(agent_input=run_input)
+
+        self.assertNotIn("char-custom_zero-0005", output.llm_output.step_result.scheduled_npc_ids)
+        self.assertEqual(output.llm_output.step_result.scheduled_npc_ids, ["char-fast-0001", "char-mid-0002"])
 
 
 if __name__ == "__main__":
