@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from typing import Iterable, Optional, Set
 
+from src.config.constants import DEFAULT_DEXTERITY_ATTRIBUTE_KEYS
 from src.data.model.base import CharacterEntity
 from src.data.model.world_state import WorldState
-
-
-DEFAULT_DEXTERITY_ATTRIBUTE_IDS = {"dexterity", "敏捷"}
 
 
 class EngineBootstrapError(ValueError):
@@ -56,7 +54,7 @@ def _matches_dexterity_keys(values: Iterable[str], dexterity_keys: Set[str]) -> 
 def _normalize_attribute_keys(values: Optional[Iterable[str]]) -> Set[str]:
     normalized = {
         str(value).strip().lower()
-        for value in (values or DEFAULT_DEXTERITY_ATTRIBUTE_IDS)
+        for value in (values or DEFAULT_DEXTERITY_ATTRIBUTE_KEYS)
         if str(value).strip()
     }
-    return normalized or set(DEFAULT_DEXTERITY_ATTRIBUTE_IDS)
+    return normalized or set(DEFAULT_DEXTERITY_ATTRIBUTE_KEYS)

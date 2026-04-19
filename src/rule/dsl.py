@@ -208,19 +208,18 @@ class DslEngine:
         snapshot: WorldSnapshot | Dict[str, Any],
         expected_version: Optional[int] = None,
     ) -> bool:
-        snapshot_payload = snapshot.to_payload() if isinstance(snapshot, WorldSnapshot) else snapshot
         if expected_version is not None:
-            version = snapshot_payload.get("version")
+            version = snapshot.version if isinstance(snapshot, WorldSnapshot) else snapshot.get("version")
             if version != expected_version:
                 raise DslError(f"snapshot version mismatch: expected {expected_version}, got {version}")
 
         ast = self.parse(expression)
-        value = self._eval_node(ast, snapshot_payload)
+        value = self._eval_node(ast, snapshot)
         if not isinstance(value, bool):
             raise DslError("expression must evaluate to boolean")
         return value
 
-    def _eval_node(self, node: AstNode, snapshot: Dict[str, Any]) -> Any:
+    def _eval_node(self, node: AstNode, snapshot: WorldSnapshot | Dict[str, Any]) -> Any:
         if node.kind == "literal":
             return node.value
 
@@ -247,20 +246,30 @@ class DslEngine:
 
         raise DslError(f"unsupported ast node: {node.kind}")
 
-    def _resolve_identifier(self, text: str, snapshot: Dict[str, Any]) -> Any:
+    def _resolve_identifier(self, text: str, snapshot: WorldSnapshot | Dict[str, Any]) -> Any:
         if "." not in text:
             return text
 
         root_entity_id, path_suffix = text.split(".", 1)
 
-        if root_entity_id.startswith("char-"):
-            data = snapshot.get("characters", {}).get(root_entity_id)
-        elif root_entity_id.startswith("item-"):
-            data = snapshot.get("items", {}).get(root_entity_id)
-        elif root_entity_id.startswith("map-"):
-            data = snapshot.get("maps", {}).get(root_entity_id)
+        if isinstance(snapshot, WorldSnapshot):
+            if root_entity_id.startswith("char-"):
+                data = snapshot.characters.get(root_entity_id)
+            elif root_entity_id.startswith("item-"):
+                data = snapshot.items.get(root_entity_id)
+            elif root_entity_id.startswith("map-"):
+                data = snapshot.maps.get(root_entity_id)
+            else:
+                return text
         else:
-            return text
+            if root_entity_id.startswith("char-"):
+                data = snapshot.get("characters", {}).get(root_entity_id)
+            elif root_entity_id.startswith("item-"):
+                data = snapshot.get("items", {}).get(root_entity_id)
+            elif root_entity_id.startswith("map-"):
+                data = snapshot.get("maps", {}).get(root_entity_id)
+            else:
+                return text
 
         if data is None:
             raise DslError(f"entity not found: {root_entity_id}")
@@ -277,7 +286,9 @@ class DslEngine:
                     raise DslError(f"field not found: {field}")
                 current = current[field]
             else:
-                raise DslError(f"cannot access field on non-object: {field}")
+                if not hasattr(current, field):
+                    raise DslError(f"field not found: {field}")
+                current = getattr(current, field)
 
             if index is not None:
                 if not isinstance(current, list):

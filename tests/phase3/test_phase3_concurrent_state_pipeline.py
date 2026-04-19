@@ -213,7 +213,7 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
 
     def test_set_description_public_and_char_index_are_blocked(self):
         runtime = StatePatchRuntime(world_state=self.world)
-        expected_version = int(self.world.get_snapshot()["version"])
+        expected_version = int(self.world.get_snapshot().version)
 
         patch_public = StateAgentOutput.model_validate(
             {
@@ -292,7 +292,7 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
             )
         )
         runtime = StatePatchRuntime(world_state=world)
-        expected_version = int(world.get_snapshot()["version"])
+        expected_version = int(world.get_snapshot().version)
 
         patch = StateAgentOutput.model_validate(
             {
@@ -445,7 +445,7 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
 
     def test_description_add_string_is_coerced_by_system(self):
         runtime = StatePatchRuntime(world_state=self.world)
-        expected_version = int(self.world.get_snapshot()["version"])
+        expected_version = int(self.world.get_snapshot().version)
         patch = StateAgentOutput.model_validate(
             {
                 "llm_output": {
@@ -590,6 +590,32 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
             Engine(world_state=world, mode="phase3", llm_service=FakeLLMService())
 
         self.assertIn("敏捷", str(exc.exception))
+
+    def test_custom_dexterity_attribute_keys_allow_bootstrap(self):
+        room = MapEntity(
+            id="map-room-0001",
+            name="房间",
+            description=Description(public=["空房间"]),
+        )
+        player = CharacterEntity(
+            id="char-player-0000",
+            name="玩家",
+            location=room.id,
+            attributes={"agility": Attribute(id="agility", name="速度", value=10, max_value=10, min_value=0)},
+        )
+        world = WorldState()
+        world.reset(
+            WorldEntityStore(
+                maps={room.id: room},
+                characters={player.id: player},
+                items={},
+            )
+        )
+
+        service = FakeLLMService()
+        service.config = ConfigLoader.load(cli_overrides={"system.dexterity_attribute_keys": ["agility"]})
+        engine = Engine(world_state=world, mode="phase3", llm_service=service)
+        self.assertEqual(engine.config.system.dexterity_attribute_keys, ["agility"])
 
 
 if __name__ == "__main__":

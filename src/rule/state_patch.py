@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.data.model.base import DescriptionAddItem, WorldEntityStore
-from src.data.model.world_state import WorldState
+from src.data.model.world_state import WorldSnapshot, WorldState
 from src.data.model.agent_output import StateAgentOutput, StateChangeOp, StateOperator
 from src.rule.dsl import DslError
 from src.rule.rule_system import RuleSystem
@@ -49,7 +49,7 @@ class StatePatchRuntime:
     def apply_patch(self, patch_output: StateAgentOutput) -> StatePatchApplyResult:
         patch_meta = patch_output.system_output.patch_meta
         snapshot_obj = self.world_state.get_snapshot()
-        snapshot = copy.deepcopy(snapshot_obj.to_payload())
+        working_snapshot = copy.deepcopy(snapshot_obj.to_payload())
         extension_registry = self.world_state.get_store_copy().extension_registry
 
         expected_version = patch_meta.expected_version
@@ -61,9 +61,8 @@ class StatePatchRuntime:
             )
 
         changes = list(patch_output.llm_output.changes)
-        self._apply_asserts(changes=changes, snapshot=snapshot)
+        self._apply_asserts(changes=changes, snapshot=snapshot_obj)
 
-        working = copy.deepcopy(snapshot)
         ordered = self._reorder(changes)
         non_assert_count = 0
         for op in ordered:
@@ -71,7 +70,8 @@ class StatePatchRuntime:
                 continue
             self._apply_single_op(
                 op=op,
-                snapshot=working,
+                snapshot=working_snapshot,
+                snapshot_ref=snapshot_obj,
                 extension_registry=extension_registry,
                 turn_id=patch_meta.turn_id,
             )
@@ -79,9 +79,9 @@ class StatePatchRuntime:
 
         store = self.world_state.get_store_copy()
         store_payload = store.model_dump(mode="json")
-        store_payload["maps"] = working.get("maps", {})
-        store_payload["characters"] = working.get("characters", {})
-        store_payload["items"] = working.get("items", {})
+        store_payload["maps"] = working_snapshot.get("maps", {})
+        store_payload["characters"] = working_snapshot.get("characters", {})
+        store_payload["items"] = working_snapshot.get("items", {})
         new_store = WorldEntityStore.model_validate(store_payload)
 
         new_version = self.world_state.commit_store(
@@ -97,7 +97,7 @@ class StatePatchRuntime:
             applied_ops=non_assert_count,
         )
 
-    def _apply_asserts(self, changes: Sequence[StateChangeOp], snapshot: Dict[str, Any]) -> None:
+    def _apply_asserts(self, changes: Sequence[StateChangeOp], snapshot: WorldSnapshot | Dict[str, Any]) -> None:
         for op in changes:
             if op.op != StateOperator.ASSERT:
                 continue
@@ -135,7 +135,14 @@ class StatePatchRuntime:
             + buckets[StateOperator.REMOVE]
         )
 
-    def _apply_single_op(self, op: StateChangeOp, snapshot: Dict[str, Any], extension_registry, turn_id: int) -> None:
+    def _apply_single_op(
+        self,
+        op: StateChangeOp,
+        snapshot: Dict[str, Any],
+        snapshot_ref: WorldSnapshot | Dict[str, Any],
+        extension_registry,
+        turn_id: int,
+    ) -> None:
         if not op.target_path:
             raise StatePatchError(ERROR_FIELD_NOT_FOUND, "target_path is required")
 
@@ -151,7 +158,7 @@ class StatePatchRuntime:
                 entity=entity,
                 path_suffix=suffix,
                 value=op.value,
-                snapshot=snapshot,
+                snapshot_ref=snapshot_ref,
             )
             return
 
@@ -383,38 +390,51 @@ class StatePatchRuntime:
         entity: Dict[str, Any],
         path_suffix: str,
         value: Any,
-        snapshot: Dict[str, Any],
+        snapshot_ref: WorldSnapshot | Dict[str, Any],
     ) -> None:
         if path_suffix != "location":
             raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "MOVE must target location")
         if not isinstance(value, str):
             raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "MOVE value must be string")
 
+        map_bucket = self._snapshot_bucket(snapshot_ref, "maps")
+        char_bucket = self._snapshot_bucket(snapshot_ref, "characters")
+
         if entity_type == "character":
-            if value not in snapshot.get("maps", {}):
+            if value not in map_bucket:
                 raise StatePatchError(
                     ERROR_INVALID_TARGET,
                     f"invalid move target map: {value}",
                     details={
                         "invalid_target": value,
-                        "valid_target_map_ids": sorted(snapshot.get("maps", {}).keys()),
+                        "valid_target_map_ids": sorted(map_bucket.keys()),
                     },
                 )
         elif entity_type == "item":
-            if value not in snapshot.get("maps", {}) and value not in snapshot.get("characters", {}):
+            if value not in map_bucket and value not in char_bucket:
                 raise StatePatchError(
                     ERROR_INVALID_TARGET,
                     f"invalid move target: {value}",
                     details={
                         "invalid_target": value,
-                        "valid_target_map_ids": sorted(snapshot.get("maps", {}).keys()),
-                        "valid_target_character_ids": sorted(snapshot.get("characters", {}).keys()),
+                        "valid_target_map_ids": sorted(map_bucket.keys()),
+                        "valid_target_character_ids": sorted(char_bucket.keys()),
                     },
                 )
         else:
             raise StatePatchError(ERROR_FIELD_TYPE_MISMATCH, "MOVE only supports character/item")
 
         entity["location"] = value
+
+    @staticmethod
+    def _snapshot_bucket(snapshot: WorldSnapshot | Dict[str, Any], bucket: str) -> Dict[str, Any]:
+        if isinstance(snapshot, WorldSnapshot):
+            value = getattr(snapshot, bucket, {})
+        else:
+            value = snapshot.get(bucket, {})
+        if isinstance(value, dict):
+            return value
+        return {}
 
     @staticmethod
     def _validate_number_range(entity: Dict[str, Any], path_suffix: str, next_value: float) -> None:

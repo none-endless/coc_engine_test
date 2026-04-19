@@ -32,10 +32,13 @@ class EvolutionAgent:
 		agent_input: EvolutionAgentInput,
 		*,
 		causality_chain: Optional[E7CausalityChain] = None,) -> EvolutionResult:
+		user_payload = agent_input.llm_input.model_dump(mode="json")
+		user_payload.pop("narrative_info", None)
+
 		llm_output = self.llm_service.call_llm_json(
 			agent_name="evolution",
 			system_prompt=EVOLUTION_SYSTEM_PROMPT,
-			user_payload=agent_input.llm_input.model_dump(mode="json"),
+			user_payload=user_payload,
 			output_model=EvolutionAgentLlmOutput,
 			retry_budget=0,
 			validation_feedback=None,

@@ -22,10 +22,13 @@ class NarrativeAgent:
 
 	def run(self, *, agent_input: NarrativeAgentInput) -> NarrativeAgentOutput:
 		execution = agent_input.system_input.execution
+		user_payload = agent_input.llm_input.model_dump(mode="json")
+		user_payload.pop("narrative_info", None)
+
 		llm_output = self.llm_service.call_llm_json(
 			agent_name="narrative",
 			system_prompt=NARRATIVE_SYSTEM_PROMPT,
-			user_payload=agent_input.llm_input.model_dump(mode="json"),
+			user_payload=user_payload,
 			output_model=NarrativeAgentLlmOutput,
 			retry_budget=0,
 			validation_feedback=None,
@@ -75,6 +78,8 @@ class NarrativeAgent:
 		emit("narrative.fragment.started")
 
 		text = ""
+		user_payload = agent_input.llm_input.model_dump(mode="json")
+		user_payload.pop("narrative_info", None)
 		stream_callable = getattr(self.llm_service, "call_llm_stream_text", None)
 		if callable(stream_callable):
 			chunks: List[str] = []
@@ -86,7 +91,7 @@ class NarrativeAgent:
 			for delta in stream_callable(
 				agent_name="narrative",
 				system_prompt=stream_prompt,
-				user_payload=agent_input.llm_input.model_dump(mode="json"),
+				user_payload=user_payload,
 				validation_feedback=None,
 			):
 				normalized_delta = str(delta)

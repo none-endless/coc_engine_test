@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from pydantic import BaseModel, Field
 
+from src.config.constants import DEFAULT_DEXTERITY_ATTRIBUTE_KEYS
+
 
 class LlmConfig(BaseModel):
     api_key: str = Field(default="")
@@ -23,7 +25,7 @@ class SystemConfig(BaseModel):
     retry_timeout_ms: int = Field(default=5000)
     fallback_error: str = Field(default="系统繁忙，请稍后重试")
     snapshot_interval: int = Field(default=10)
-    dexterity_attribute_keys: List[str] = Field(default_factory=lambda: ["dexterity", "敏捷"])
+    dexterity_attribute_keys: List[str] = Field(default_factory=lambda: list(DEFAULT_DEXTERITY_ATTRIBUTE_KEYS))
 
 
 class AgentDmConfig(BaseModel):

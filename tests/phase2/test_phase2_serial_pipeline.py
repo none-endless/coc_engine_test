@@ -1,7 +1,9 @@
 import unittest
+from inspect import signature
 
 from pydantic import BaseModel
 
+from src.agent.llm.input_agent import DMAgent
 from src.config.loader import ConfigLoader
 from src.data.model.agent_output import DmAgentLlmOutput, EvolutionAgentLlmOutput
 from src.data.model.base import Attribute, CharacterEntity, Description, MapEntity, WorldEntityStore
@@ -197,9 +199,13 @@ class TestPhase2SerialPipeline(unittest.TestCase):
         self.assertEqual(dm["routing_hint"], "against")
         self.assertGreaterEqual(len(dm["against_char_id"]), 2)
 
-        valid_ids = set(self.engine.world_state.get_snapshot()["characters"].keys())
+        valid_ids = set(self.engine.world_state.get_snapshot().characters.keys())
         for char_id in dm["against_char_id"]:
             self.assertIn(char_id, valid_ids)
+
+    def test_dm_agent_run_signature_only_accepts_agent_input(self):
+        params = list(signature(DMAgent.run).parameters.values())
+        self.assertEqual([item.name for item in params], ["self", "agent_input"])
 
     def test_evolution_summary_contains_turn_and_trace(self):
         result = self.engine.run_turn(
@@ -251,15 +257,12 @@ class TestPhase2SerialPipeline(unittest.TestCase):
         )
 
         self.assertEqual(self.engine._dm_memory.memory_turns, 5)
-        self.assertEqual(self.engine._dm_memory.current_event, "我想和守卫聊聊")
-        self.assertEqual(len(self.engine._dm_memory.dialogues), 2)
-        self.assertEqual(self.engine._dm_memory.dialogues[0].speaker, "char-player-0000")
-        self.assertEqual(self.engine._dm_memory.dialogues[0].content, "我想和守卫聊聊")
-        self.assertEqual(self.engine._dm_memory.dialogues[1].speaker, "dmagent")
-        self.assertEqual(self.engine._dm_memory.dialogues[1].content, "这里现在更适合直接由 DM 对你回复。")
+        self.assertEqual(len(self.engine._dm_memory.dialogues), 1)
+        self.assertEqual(self.engine._dm_memory.dialogues[0].speaker, "dmagent")
+        self.assertEqual(self.engine._dm_memory.dialogues[0].content, "这里现在更适合直接由 DM 对你回复。")
 
     def test_dm_memory_rollover_pushes_old_entries_to_log(self):
-        for index in range(1, 5):
+        for index in range(1, 9):
             self.engine.run_turn(
                 raw_input=f"第{index}次对话",
                 actor_id="char-player-0000",
@@ -286,6 +289,8 @@ class TestPhase2SerialPipeline(unittest.TestCase):
         self.assertEqual(service.last_dm_payload["available_attributes"][0]["name"], "敏捷")
         self.assertIn("char-player-0000", [item["id"] for item in service.last_dm_payload["valid_characters"]])
         self.assertIn("char-guard-0001", [item["id"] for item in service.last_dm_payload["valid_characters"]])
+        self.assertNotIn("narrative_info", service.last_dm_payload)
+        self.assertNotIn("dialogue_log", service.last_dm_payload.get("agent_memory", {}))
         self.assertEqual(result["dm"]["intent_info"]["attributes"], ["fight"])
 
 

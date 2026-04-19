@@ -4,12 +4,8 @@ Agent Memory 数据结构
 """
 
 from datetime import datetime
-from typing import List, Dict, Optional, Any, TYPE_CHECKING
+from typing import List
 from pydantic import BaseModel, ConfigDict, Field
-
-# 避免循环导入，仅在类型检查时导入
-if TYPE_CHECKING:
-    pass
 
 
 # ============================================================
@@ -44,8 +40,6 @@ class DmMemory(BaseModel):
     说明：
     - dialogues: 最近若干回合的对话信息，超出部分被压入 dialogue_log
     - dialogue_log: 完整对话日志，用于 debug 和回溯
-    - current_event: 当前对话焦点，由系统维护
-    - key_facts: 当前关键事实，由系统维护
     - memory_turns: recent 对话保留回合数，由配置驱动
     """
     model_config = ConfigDict(
@@ -60,16 +54,6 @@ class DmMemory(BaseModel):
     dialogue_log: List["DialogueLogItem"] = Field(
         default_factory=list,
         description="完整对话日志，仅用于 debug 与回溯"
-    )
-    current_event: str = Field(
-        default="",
-        alias="currentEvent",
-        description="当前对话焦点，由系统维护"
-    )
-    key_facts: List[str] = Field(
-        default_factory=list,
-        alias="keyFacts",
-        description="关键事实，由系统维护"
     )
     memory_turns: int = Field(
         default=5,
@@ -102,7 +86,6 @@ class DmMemory(BaseModel):
             speaker=speaker,
             content=content
         ))
-        self.current_event = content
 
     def get_recent_dialogues(self, count: int = 5) -> List["DialogueEntry"]:
         """

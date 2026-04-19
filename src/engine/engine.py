@@ -149,8 +149,8 @@ class Engine:
         self._dm_memory = DmMemory(memory_turns=self.config.agent.dm.memory_turns)
         self._world_snapshot_repository = self._build_world_snapshot_repository()
         self._narrative_repository = self._build_narrative_repository()
-        self._turn_orchestrator = TurnOrchestrator(self._run_phase3_turn_async)
-        self._consistency_orchestrator = ConsistencyOrchestrator(self._run_consistency_cycle)
+        self._turn_orchestrator = TurnOrchestrator(self)
+        self._consistency_orchestrator = ConsistencyOrchestrator(self)
         self._narrative_truth_manager = NarrativeTruthManager()
 
         self.state_agent = StateChangeAgent(llm_service=self.dm_agent.llm_service)
@@ -325,193 +325,12 @@ class Engine:
         return entries
 
     def _build_consistency_input(self, *, turn_id: int, trace_id: int) -> Optional[ConsistencyAgentInput]:
-        """构建一致性维护输入：系统自动收集 narration/description/key_facts 三类候选。"""
-        snapshot = self.world_state.get_snapshot()
-        description_threshold = self._consistency_description_threshold
-        shortlog_threshold = self._consistency_shortlog_threshold
-
-        description_candidates: List[ConsistencyDescriptionCandidate] = []
-        for bucket_values in (snapshot.maps, snapshot.characters, snapshot.items):
-            for entity_id, payload in bucket_values.items():
-                add_items = payload.description.add
-                if len(add_items) > description_threshold:
-                    add_entries = self._extract_snapshot_description_entries(add_items)
-                    if not add_entries:
-                        continue
-                    public_entries = [
-                        self._normalize_consistency_text(text)
-                        for text in payload.description.public
-                    ]
-                    description_candidates.append(
-                        ConsistencyDescriptionCandidate(
-                            entity_id=entity_id,
-                            public=[text for text in public_entries if text],
-                            add=add_entries,
-                        )
-                    )
-
-        key_facts_candidates: List[ConsistencyKeyFactsCandidate] = []
-        for char_id, payload in snapshot.characters.items():
-            short_log = payload.memory.short_log
-            if len(short_log) > shortlog_threshold:
-                short_log_entries = self._extract_snapshot_shortlog_events(short_log)
-                if not short_log_entries:
-                    continue
-                key_facts_candidates.append(
-                    ConsistencyKeyFactsCandidate(
-                        character_id=char_id,
-                        key_facts=[
-                            self._normalize_consistency_text(item)
-                            for item in payload.memory.key_facts
-                            if self._normalize_consistency_text(item)
-                        ],
-                        short_log=short_log_entries,
-                    )
-                )
-
-        narration_candidates: List[ConsistencyNarrationCandidate] = []
-        for entry in self._narrative_info.recent:
-            content = self._normalize_consistency_text(entry.content)
-            if content:
-                narration_candidates.append(ConsistencyNarrationCandidate(turn=entry.turn, content=content))
-        if not narration_candidates:
-            recent_changes_window = max(1, int(self.config.consistency.narration_fallback_recent_changes))
-            fallback_narration = "；".join(
-                self._normalize_consistency_text(item.summary)
-                for item in self._recent_change_logs[-recent_changes_window:]
-                if self._normalize_consistency_text(item.summary)
-            )
-            if fallback_narration:
-                narration_candidates.append(ConsistencyNarrationCandidate(turn=turn_id, content=fallback_narration))
-
-        consistency_config_json = self.config.model_dump(mode="json") if self.config.consistency.include_full_config_json else {}
-
-        has_description_candidate = bool(description_candidates)
-        has_key_facts_candidate = bool(key_facts_candidates)
-        has_narrative_candidate = len(narration_candidates) >= self._consistency_min_narration_candidates
-        if not has_description_candidate and not has_key_facts_candidate and not has_narrative_candidate:
-            return None
-
-        return ConsistencyAgentInput(
-            identity=AgentIdentity(id="consistency", skill="maintain description public, key facts and narrative recent"),
-            llm_input=ConsistencyAgentLlmInput(
-                narration_candidates=narration_candidates,
-                description_candidates=description_candidates,
-                key_facts_candidates=key_facts_candidates,
-                recent_change_logs=[item.model_copy(deep=True) for item in self._recent_change_logs],
-                config_json=consistency_config_json,
-            ),
-            system_input=ConsistencyAgentSystemInput(
-                execution=SystemExecutionMeta(
-                    turn_id=turn_id,
-                    trace_id=trace_id,
-                    world_version=self.world_state.get_version(),
-                    debug={
-                        "branch": "consistency",
-                        "description_merge_threshold": str(description_threshold),
-                        "shortlog_merge_threshold": str(shortlog_threshold),
-                        "description_candidates": str(len(description_candidates)),
-                        "key_facts_candidates": str(len(key_facts_candidates)),
-                        "narration_candidates": str(len(narration_candidates)),
-                    },
-                )
-            ),
-        )
+        """兼容旧入口：一致性输入构建已迁移到 ConsistencyOrchestrator。"""
+        return self._consistency_orchestrator.build_consistency_input(turn_id=turn_id, trace_id=trace_id)
 
     async def _run_consistency_cycle(self, *, turn_id: int, trace_id: int) -> Optional[Dict[str, Any]]:
-        """执行一致性维护回合：调用 LLM 压缩文本并由系统自动写回与清空缓冲。"""
-        if not self._consistency_enabled:
-            return None
-        if turn_id % self._consistency_trigger_interval != 0:
-            return None
-
-        agent_input = self._build_consistency_input(turn_id=turn_id, trace_id=trace_id)
-        if agent_input is None:
-            return {
-                "triggered": True,
-                "ok": True,
-                "blocked": False,
-                "retry_count": 0,
-                "patch": {"llm_output": {"summary_items": [], "can_proceed": True, "system_message": ""}},
-                "maintenance": {"skipped": True},
-                "system_message": "",
-                "error_history": [],
-            }
-
-        validation_feedback: Optional[Dict[str, Any]] = None
-        error_history: List[Dict[str, Any]] = []
-        max_retry = int(self.config.system.max_retry_count)
-        final_output: Optional[ConsistencyAgentOutput] = None
-
-        for retry_seq in range(max_retry + 1):
-            try:
-                output = await asyncio.to_thread(
-                    self.consistency_agent.run,
-                    agent_input=agent_input,
-                    retry_seq=retry_seq,
-                    patch_id=f"consistency-{turn_id}-{trace_id}-{retry_seq}",
-                    validation_feedback=validation_feedback,
-                )
-            except LLMServiceError as exc:
-                message = f"一致性维护服务不可用: {str(exc)}"
-                validation_feedback = {"message": message}
-                error_history.append(
-                    {
-                        "message": message,
-                        "retry_seq": retry_seq,
-                        "error_type": "llm_service_error",
-                    }
-                )
-                continue
-            final_output = output
-
-            if not output.llm_output.can_proceed:
-                message = output.llm_output.system_message.strip() or self.config.system.fallback_error
-                self._consistency_blocking_message = message
-                return {
-                    "triggered": True,
-                    "ok": False,
-                    "blocked": True,
-                    "retry_count": retry_seq,
-                    "patch": output.model_dump(mode="json"),
-                    "maintenance": None,
-                    "system_message": message,
-                    "error_history": error_history,
-                }
-
-            try:
-                maintenance = await asyncio.to_thread(
-                    self._apply_consistency_changes,
-                    output,
-                    agent_input,
-                    turn_id,
-                )
-                self._persist_world_snapshot()
-                self._persist_narrative_info()
-                return {
-                    "triggered": True,
-                    "ok": True,
-                    "blocked": False,
-                    "retry_count": retry_seq,
-                    "patch": output.model_dump(mode="json"),
-                    "maintenance": maintenance,
-                    "system_message": output.llm_output.system_message,
-                    "error_history": error_history,
-                }
-            except ValueError as exc:
-                validation_feedback = {"message": str(exc)}
-                error_history.append({"message": str(exc), "retry_seq": retry_seq})
-
-        return {
-            "triggered": True,
-            "ok": False,
-            "blocked": True,
-            "retry_count": max_retry,
-            "patch": final_output.model_dump(mode="json") if final_output is not None else None,
-            "maintenance": None,
-            "system_message": "一致性维护重试耗尽，请稍后重试。",
-            "error_history": error_history,
-        }
+        """兼容旧入口：一致性循环已迁移到 ConsistencyOrchestrator。"""
+        return await self._consistency_orchestrator.run_consistency_cycle(turn_id=turn_id, trace_id=trace_id)
 
     def _apply_consistency_changes(
         self,
@@ -519,109 +338,17 @@ class Engine:
         agent_input: ConsistencyAgentInput,
         turn_id: int,
     ) -> Dict[str, Any]:
-        """应用一致性压缩结果，并由系统自动清空 description.add、short_log 与 recent。"""
-        summary_items = list(output.llm_output.summary_items)
-        if not summary_items:
-            raise ValueError("consistency summary_items 不能为空")
-        if summary_items[0].kind != ConsistencySummaryKind.NARRATION:
-            raise ValueError("consistency summary_items 第一项必须是 narration")
-        if any(item.kind == ConsistencySummaryKind.NARRATION for item in summary_items[1:]):
-            raise ValueError("consistency narration 只能出现在第一项")
-
-        narration_value = self._normalize_consistency_text(summary_items[0].value)
-        if not narration_value:
-            raise ValueError("consistency narration 不能为空")
-
-        description_values = [
-            self._normalize_consistency_text(item.value)
-            for item in summary_items[1:]
-            if item.kind == ConsistencySummaryKind.DESCRIPTION
-        ]
-        key_facts_values = [
-            self._normalize_consistency_text(item.value)
-            for item in summary_items[1:]
-            if item.kind == ConsistencySummaryKind.KEY_FACTS
-        ]
-
-        expected_description_count = len(agent_input.llm_input.description_candidates)
-        expected_key_facts_count = len(agent_input.llm_input.key_facts_candidates)
-        if len(description_values) != expected_description_count:
-            raise ValueError(
-                f"consistency description 数量不匹配: expected={expected_description_count}, got={len(description_values)}"
-            )
-        if len(key_facts_values) != expected_key_facts_count:
-            raise ValueError(
-                f"consistency key_facts 数量不匹配: expected={expected_key_facts_count}, got={len(key_facts_values)}"
-            )
-
-        store = self.world_state.get_store_copy()
-
-        for index, candidate in enumerate(agent_input.llm_input.description_candidates):
-            compressed_description = description_values[index]
-            if not compressed_description:
-                raise ValueError(f"description 候选 {candidate.entity_id} 为空")
-            entity = self._get_consistency_entity(store=store, entity_id=candidate.entity_id)
-            entity.description.public = [compressed_description]
-            entity.description.add = []
-
-        for index, candidate in enumerate(agent_input.llm_input.key_facts_candidates):
-            compressed_key_fact = key_facts_values[index]
-            if not compressed_key_fact:
-                raise ValueError(f"key_facts 候选 {candidate.character_id} 为空")
-            character = self._get_consistency_entity(store=store, entity_id=candidate.character_id)
-            character.memory.key_facts = [compressed_key_fact]
-            character.memory.short_log = []
-
-        self._normalize_npc_memory_windows(store=store)
-        self.world_state.commit_store(store=store)
-        self._narrative_info.recent = [NarrativeEntry(turn=turn_id, content=narration_value)]
-
-        return {
-            "world_changes": expected_description_count + expected_key_facts_count,
-            "narrative_changes": 1,
-            "description_entities": expected_description_count,
-            "key_facts_entities": expected_key_facts_count,
-            "cleared_description_add": expected_description_count,
-            "cleared_short_log": expected_key_facts_count,
-        }
+        """兼容旧入口：一致性应用已迁移到 ConsistencyOrchestrator。"""
+        return self._consistency_orchestrator.apply_consistency_changes(output, agent_input, turn_id)
 
     @staticmethod
     def _get_consistency_entity(*, store, entity_id: str):
-        """按实体 ID 解析一致性维护目标实体。"""
-        if entity_id.startswith("map-"):
-            entity = store.maps.get(entity_id)
-            if entity is None:
-                raise ValueError(f"consistency map not found: {entity_id}")
-            return entity
-        if entity_id.startswith("char-"):
-            entity = store.characters.get(entity_id)
-            if entity is None:
-                raise ValueError(f"consistency character not found: {entity_id}")
-            return entity
-        if entity_id.startswith("item-"):
-            entity = store.items.get(entity_id)
-            if entity is None:
-                raise ValueError(f"consistency item not found: {entity_id}")
-            return entity
-        raise ValueError(f"unsupported consistency entity id: {entity_id}")
+        """兼容旧入口：实体解析已迁移到 ConsistencyOrchestrator。"""
+        return ConsistencyOrchestrator.get_consistency_entity(store=store, entity_id=entity_id)
 
     def _normalize_npc_memory_windows(self, *, store) -> None:
-        """???????????????????????? key_facts?"""
-        for character in store.characters.values():
-            memory = character.memory
-            memory.short = [item for item in memory.short if (item or "").strip()][-self._npc_memory_turn_limit :]
-            memory.short_log = [
-                ShortLogItem.model_validate(item.model_dump(mode="json") if hasattr(item, "model_dump") else item)
-                for item in memory.short_log
-                if (getattr(item, "event", "") or "").strip()
-            ][-self._npc_shortlog_turn_limit :]
-            memory.log = [
-                MemoryLogItem.model_validate(item.model_dump(mode="json") if hasattr(item, "model_dump") else item)
-                for item in memory.log
-                if (getattr(item, "content", "") or "").strip()
-            ]
-            if memory.current_event:
-                memory.current_event = memory.current_event.strip()
+        """兼容旧入口：记忆窗口规整已迁移到 ConsistencyOrchestrator。"""
+        self._consistency_orchestrator.normalize_npc_memory_windows(store=store)
 
     def _dm_handler(self, envelope) -> Dict[str, Any]:
         chain_e1 = E1InputInfo(
@@ -636,6 +363,8 @@ class Engine:
 
         actor = self.world_state.get_character(self._current_actor_id)
         views = self.world_provider.precompute_all_views(current_map_id=actor.location, turn=envelope.turn)
+        attribute_refs = self._build_available_attribute_refs()
+        character_refs = self._build_valid_character_refs()
 
         dm_input = DmAgentInput(
             identity=AgentIdentity(id="dmagent", skill="parse user intent"),
@@ -644,14 +373,8 @@ class Engine:
                 world_info=views.dm_view,
                 narrative_info=self._narrative_info,
                 agent_memory=self._dm_memory,
-                available_attributes=[
-                    AvailableAttributeRef(id=attr_id, name=attr.name)
-                    for attr_id, attr in actor.attributes.items()
-                ],
-                valid_characters=[
-                    AvailableCharacterRef(id=char_id, name=self.world_state.get_character(char_id).name)
-                    for char_id in sorted(self.world_state.get_snapshot().characters.keys())
-                ],
+                available_attributes=attribute_refs,
+                valid_characters=character_refs,
             ),
             system_input=DmAgentSystemInput(
                 chain_raw=DmAgentChainInput(e1=chain_e1),
@@ -668,8 +391,6 @@ class Engine:
         analyzed = self.dm_agent.run(agent_input=dm_input)
         self._update_dm_memory(
             turn_id=envelope.turn,
-            actor_id=self._current_actor_id,
-            raw_input=envelope.raw_input,
             dm_result=analyzed,
         )
         self._record_io(
@@ -764,18 +485,36 @@ class Engine:
         self,
         *,
         turn_id: int,
-        actor_id: str,
-        raw_input: str,
         dm_result: DmAnalyzeResult,
     ) -> None:
         """维护 DM 对话记忆，使下一轮输入带上最近对话上下文。"""
-        self._dm_memory.add_dialogue(turn=turn_id, speaker=actor_id, content=raw_input)
-
         dm_reply = dm_result.intent_info.dm_reply
         if dm_reply:
             self._dm_memory.add_dialogue(turn=turn_id, speaker="dmagent", content=dm_reply)
 
-        self._dm_memory.current_event = raw_input
+    def _build_valid_character_refs(self) -> List[AvailableCharacterRef]:
+        return [
+            AvailableCharacterRef(id=char_id, name=self.world_state.get_character(char_id).name)
+            for char_id in sorted(self.world_state.get_snapshot().characters.keys())
+        ]
+
+    def _build_available_attribute_refs(self) -> List[AvailableAttributeRef]:
+        """聚合当前世界内所有角色可用属性，确保 ID + name 完整可见。"""
+        attrs: Dict[str, str] = {}
+        for char_id in sorted(self.world_state.get_snapshot().characters.keys()):
+            character = self.world_state.get_character(char_id)
+            for attr_id, attr in character.attributes.items():
+                normalized_id = str(attr_id or "").strip()
+                if not normalized_id:
+                    continue
+                attr_name = str(getattr(attr, "name", "") or normalized_id).strip()
+                if normalized_id not in attrs or (not attrs[normalized_id] and attr_name):
+                    attrs[normalized_id] = attr_name
+
+        return [
+            AvailableAttributeRef(id=attr_id, name=attrs[attr_id] or attr_id)
+            for attr_id in sorted(attrs.keys())
+        ]
 
     def _record_io(self, *, kind: str, agent_name: str, input_data, output_data=None, extra: Optional[Dict[str, Any]] = None) -> None:
         if self._io_logger is None:
@@ -981,278 +720,14 @@ class Engine:
         trace_id: int,
         causality_chain: Optional[E7CausalityChain],
     ) -> Dict[str, Any]:
-        prepared = self._prepare_turn_context(
+        """兼容旧入口：phase3 主编排已迁移到 TurnOrchestrator。"""
+        return await self._turn_orchestrator.run_phase3_turn_async(
             raw_input=raw_input,
             actor_id=actor_id,
             turn_id=turn_id,
             trace_id=trace_id,
-        )
-        routed = prepared["routed"]
-        if routed.route == "rule_system_meta":
-            return self._handle_meta_route(routed=routed, turn_id=turn_id, trace_id=trace_id)
-        dm_result = DmAnalyzeResult.model_validate(routed.payload)
-        direct_event = self._build_dm_direct_reply_event(dm_result=dm_result, turn_id=turn_id, trace_id=trace_id)
-        if direct_event is not None:
-            self._routing_logs.append(direct_event)
-            self._record_io(
-                kind="turn_result",
-                agent_name="engine",
-                input_data={"route": "phase3_dm_direct_reply", "turn_id": turn_id, "trace_id": trace_id, "actor_id": actor_id},
-                output_data=direct_event,
-            )
-            return direct_event
-
-        context = self._build_nl_context(
-            routed=routed,
-            raw_input=raw_input,
-            actor_id=actor_id,
-            turn_id=turn_id,
-            trace_id=trace_id,
-            world_version=prepared["world_version"],
             causality_chain=causality_chain,
         )
-
-        evolution_result = context["evolution_result"]
-        e4 = E4EvolutionLlmView(summary=evolution_result.summary)
-        e4_chain = E4EvolutionStepResult(summary=evolution_result.summary)
-        merger_chain = evolution_result.e7.model_copy(deep=True)
-        checkpoint = self.world_state.capture_checkpoint()
-
-        scheduler_input = NpcSchedulerAgentInput(
-            identity=AgentIdentity(id="npcscheduler", skill="schedule npc branch"),
-            llm_input=NpcSchedulerAgentLlmInput(
-                e4=e4,
-                world_info=context["views"].npc_scheduler_view,
-                narrative_info=self._narrative_info,
-            ),
-            system_input=NpcSchedulerAgentSystemInput(
-                chain_raw=NpcSchedulerAgentChainInput(e4=e4_chain),
-                execution=SystemExecutionMeta(
-                    turn_id=turn_id,
-                    trace_id=trace_id,
-                    world_version=prepared["world_version"],
-                    event_id=routed.envelope.event_id,
-                    debug={"branch": "npc_scheduler"},
-                ),
-            ),
-        )
-
-        state_input = StateAgentInput(
-            identity=AgentIdentity(id="state", skill="generate state patch"),
-            llm_input=StateAgentLlmInput(
-                e4=e4,
-                world_info=context["views"].state_agent_view,
-                fallback_error=None,
-            ),
-            system_input=StateAgentSystemInput(
-                chain_raw=StateChangeAgentChainInput(e4=e4_chain, fallback_error=None),
-                retry_control=SystemRetryControl(
-                    can_retry=True,
-                    retry_budget=self.config.system.max_retry_count,
-                ),
-                execution=SystemExecutionMeta(
-                    turn_id=turn_id,
-                    trace_id=trace_id,
-                    world_version=int(checkpoint["version"]),
-                    event_id=routed.envelope.event_id,
-                    debug={"branch": "state"},
-                ),
-            ),
-        )
-
-        branch_logs: List[Dict[str, Any]] = []
-        scheduler_task = asyncio.create_task(self._run_scheduler_branch(scheduler_input, branch_logs))
-        state_task = asyncio.create_task(self._run_state_branch(state_input, checkpoint, branch_logs))
-        narrative_out: Optional[NarrativeAgentOutput] = None
-        narrative_stream_events: List[Dict[str, Any]] = []
-        narrative_stream_transport: Dict[str, List[Any]] = {"sse": [], "websocket": []}
-        if evolution_result.visible_to_player:
-            narrative_input = NarrativeAgentInput(
-                identity=AgentIdentity(id="narrative", skill="generate narrative draft"),
-                llm_input=NarrativeAgentLlmInput(
-                    e4=e4,
-                    world_info=context["views"].narrative_view,
-                    narrative_info=self._narrative_info,
-                ),
-                system_input=NarrativeAgentSystemInput(
-                    chain_raw=NarrativeAgentChainInput(e4=e4_chain),
-                    execution=SystemExecutionMeta(
-                        turn_id=turn_id,
-                        trace_id=trace_id,
-                        world_version=prepared["world_version"],
-                        event_id=routed.envelope.event_id,
-                        debug={"branch": "narrative"},
-                    ),
-                ),
-            )
-            narrative_task = asyncio.create_task(
-                self._run_narrative_branch(
-                    narrative_input,
-                    branch_logs,
-                    source_kind="player",
-                    source_id=actor_id,
-                )
-            )
-            scheduler_out, state_out, narrative_pack = await asyncio.gather(scheduler_task, state_task, narrative_task)
-            narrative_out, narrative_stream_events = narrative_pack
-            narrative_stream_transport = NarrativeStreamInterface.build_transport_payload(narrative_stream_events)
-        else:
-            scheduler_out, state_out = await asyncio.gather(scheduler_task, state_task)
-
-        fallback_error = state_out.get("fallback_error")
-        performer_out: List[NpcPerformerAgentOutput] = []
-        performer_chain: List[NpcPerformerChainResult] = []
-        npc_visible_narratives: List[str] = []
-        if fallback_error is None:
-            performer_out, performer_chain, npc_fallback_error = await self._run_performer_branch(
-                scheduler_out=scheduler_out,
-                source_actor_id=actor_id,
-                turn_id=turn_id,
-                trace_id=trace_id,
-                world_version=prepared["world_version"],
-                branch_logs=branch_logs,
-                narrative_stream_events=narrative_stream_events,
-            )
-            if npc_fallback_error is not None:
-                fallback_error = npc_fallback_error
-            else:
-                npc_visible_narratives = self._collect_npc_visible_narrative_texts(performer_chain)
-                merger_chain = self._merge_e7_chains(
-                    base_chain=merger_chain,
-                    extra_chains=[chain_item.e7 for chain_item in performer_chain],
-                )
-
-        narrative_fragments = self._collect_narrative_fragments_from_events(narrative_stream_events)
-        aggregated_raw = self._compose_fragment_aggregate_text(narrative_fragments)
-        if not aggregated_raw and narrative_out is not None:
-            aggregated_raw = str(narrative_out.llm_output.narrative_str or "").strip()
-        if narrative_stream_events:
-            narrative_stream_transport = NarrativeStreamInterface.build_transport_payload(narrative_stream_events)
-
-        merger_payload = None
-        if narrative_out is None:
-            narrative_payload = {
-                "llm_output": {
-                    "narrative_str": "",
-                },
-                "system_output": {},
-                "stream_events": [],
-                "stream_transport": {"sse": [], "websocket": []},
-                "fragments": [],
-                "aggregated_raw": "",
-            }
-        else:
-            narrative_payload = narrative_out.model_dump(mode="json")
-            narrative_payload["stream_events"] = narrative_stream_events
-            narrative_payload["stream_transport"] = narrative_stream_transport
-            narrative_payload["fragments"] = narrative_fragments
-            narrative_payload["aggregated_raw"] = aggregated_raw
-        if fallback_error is not None:
-            narrative_payload = {
-                "llm_output": {
-                    "narrative_str": "",
-                },
-                "system_output": narrative_payload.get("system_output", {}),
-                "stream_events": [],
-                "stream_transport": {"sse": [], "websocket": []},
-                "fragments": [],
-                "aggregated_raw": "",
-            }
-        else:
-            player_narrative_text = narrative_out.llm_output.narrative_str if narrative_out is not None else ""
-            merger_narrative_input = aggregated_raw or self._compose_merger_narrative_input(
-                player_narrative_text,
-                npc_visible_narratives,
-            )
-            llm_payload = narrative_payload.get("llm_output", {})
-            if isinstance(llm_payload, dict):
-                llm_payload["narrative_str"] = merger_narrative_input
-            merger_out = await self._run_merger_branch(
-                context=context,
-                routed=routed,
-                prepared=prepared,
-                branch_logs=branch_logs,
-                causality_chain=merger_chain,
-                narrative_str=merger_narrative_input,
-            )
-            merger_payload = merger_out.model_dump(mode="json")
-            self._narrative_info.add_narrative(
-                turn=turn_id,
-                content=merger_out.llm_output.narrative_str,
-                source="merger_agent",
-                max_recent=self._narrative_recent_limit,
-            )
-            if str(player_narrative_text).strip():
-                self._narrative_info.append_log(
-                    turn=turn_id,
-                    content=player_narrative_text,
-                    source="narrative_agent",
-                )
-            for npc_text in npc_visible_narratives:
-                self._narrative_info.append_log(
-                    turn=turn_id,
-                    content=npc_text,
-                    source="npc_narrative",
-                )
-            self._persist_narrative_info()
-
-        committed_summary = ""
-        if fallback_error is None:
-            if merger_payload is not None:
-                committed_summary = merger_payload.get("llm_output", {}).get("narrative_str", "")
-            if not committed_summary:
-                committed_summary = evolution_result.summary
-            self._append_recent_change_log(turn_id=turn_id, route="phase3_concurrent_nl", summary=committed_summary)
-
-        consistency_payload = None
-        if fallback_error is None:
-            consistency_payload = await self._consistency_orchestrator.run_consistency_cycle(
-                turn_id=turn_id,
-                trace_id=trace_id,
-            )
-            if (
-                consistency_payload is not None
-                and consistency_payload.get("blocked")
-                and self.config.consistency.block_on_failure
-            ):
-                fallback_error = {
-                    "code": "CONSISTENCY_BLOCKED",
-                    "message": consistency_payload.get("system_message") or self.config.system.fallback_error,
-                    "retry_count": consistency_payload.get("retry_count", 0),
-                    "retriable": False,
-                    "rollback_applied": False,
-                    "degraded_output": consistency_payload.get("system_message"),
-                    "details": {"phase": "consistency"},
-                }
-
-        event = {
-            "route": "phase3_concurrent_nl",
-            "turn_id": turn_id,
-            "trace_id": trace_id,
-            "dm": self._serialize_dm_result(context["dm_result"]),
-            "e3": context["e3_result"].model_dump(mode="json"),
-            "evolution": evolution_result.model_dump(mode="json"),
-            "npcscheduler": scheduler_out.model_dump(mode="json"),
-            "npcperformer": [item.model_dump(mode="json") for item in performer_out],
-            "npc_performer_chain": [item.model_dump(mode="json") for item in performer_chain],
-            "state": state_out,
-            "narrative": narrative_payload,
-            "merger": merger_payload,
-            "narrative_triggered": fallback_error is None and evolution_result.visible_to_player,
-            "fallback_error": fallback_error,
-            "consistency": consistency_payload,
-            "parallel_timeline": branch_logs,
-            "terminated": fallback_error is not None,
-            "narrative_info": self._narrative_info.model_dump(mode="json"),
-        }
-        self._routing_logs.append(event)
-        self._record_io(
-            kind="turn_result",
-            agent_name="engine",
-            input_data={"route": "phase3", "turn_id": turn_id, "trace_id": trace_id, "actor_id": actor_id},
-            output_data=event,
-        )
-        return event
 
     def _build_dm_direct_reply_event(
         self,
@@ -1468,10 +943,8 @@ class Engine:
         for npc_id in scheduled_npc_ids:
             current_world_version = int(self.world_state.get_version())
             npc_character = self.world_state.get_character(npc_id)
-            valid_character_refs = [
-                AvailableCharacterRef(id=char_id, name=self.world_state.get_character(char_id).name)
-                for char_id in sorted(self.world_state.get_snapshot().characters.keys())
-            ]
+            valid_character_refs = self._build_valid_character_refs()
+            available_attribute_refs = self._build_available_attribute_refs()
             npc_input = NpcPerformerAgentInput(
                 identity=AgentIdentity(id="npcperformer", skill="execute npc behavior"),
                 llm_input=NpcPerformerAgentLlmInput(
@@ -1485,10 +958,7 @@ class Engine:
                     ),
                     world_info=self.world_provider.get_npc_view(npc_id),
                     agent_memory=npc_character.memory,
-                    available_attributes=[
-                        AvailableAttributeRef(id=attr_id, name=attr.name)
-                        for attr_id, attr in npc_character.attributes.items()
-                    ],
+                    available_attributes=available_attribute_refs,
                     valid_characters=valid_character_refs,
                 ),
                 system_input=NpcPerformerAgentSystemInput(
@@ -1555,9 +1025,16 @@ class Engine:
                     ),
                 ),
             )
-            npc_state_result = await self._run_state_branch(npc_state_input, npc_checkpoint, branch_logs)
+            npc_state_result = await self._run_state_branch(
+                npc_state_input,
+                npc_checkpoint,
+                branch_logs,
+                post_apply_hook=lambda _output=output: self.npc_performer_agent.apply_side_effects(output=_output),
+            )
             npc_fallback = npc_state_result.get("fallback_error")
             if npc_fallback is not None:
+                fallback_code = str(npc_fallback.get("code", ""))
+                stopped_reason = "npc_side_effects_failed" if fallback_code == "STATE_POST_APPLY_FAILED" else "npc_state_fallback"
                 ended = time.perf_counter()
                 branch_logs.append(
                     {
@@ -1568,9 +1045,27 @@ class Engine:
                         "duration_ms": round((ended - started) * 1000, 3),
                         "npc_ids": list(scheduled_npc_ids),
                         "stopped_at_npc_id": npc_id,
-                        "stopped_reason": "npc_state_fallback",
+                        "stopped_reason": stopped_reason,
                     }
                 )
+                if fallback_code == "STATE_POST_APPLY_FAILED":
+                    return (
+                        outputs,
+                        downstream_chain,
+                        {
+                            "code": "NPC_SIDE_EFFECTS_FAILED",
+                            "message": self.config.system.fallback_error,
+                            "retry_count": int(npc_fallback.get("retry_count", 0)),
+                            "retriable": False,
+                            "rollback_applied": bool(npc_fallback.get("rollback_applied", True)),
+                            "degraded_output": npc_fallback.get("degraded_output", self.config.system.fallback_error),
+                            "details": {
+                                "phase": "npc_performer",
+                                "npc_id": npc_id,
+                                "origin": npc_fallback.get("details", {}).get("error", "state_post_apply_failed"),
+                            },
+                        },
+                    )
                 return (
                     outputs,
                     downstream_chain,
@@ -1585,63 +1080,6 @@ class Engine:
                             "phase": "npc_state",
                             "npc_id": npc_id,
                             "origin": npc_fallback,
-                        },
-                    },
-                )
-
-            try:
-                await asyncio.to_thread(
-                    self.npc_performer_agent.apply_side_effects,
-                    agent_input=npc_input,
-                    output=output,
-                )
-            except Exception as exc:
-                async with self._state_commit_lock:
-                    await asyncio.to_thread(self.world_state.restore_checkpoint, npc_checkpoint)
-                self._persist_world_snapshot()
-
-                ended = time.perf_counter()
-                branch_logs.append(
-                    {
-                        "branch": "npc_performer",
-                        "turn_id": turn_id,
-                        "trace_id": trace_id,
-                        "started_at": started_at,
-                        "duration_ms": round((ended - started) * 1000, 3),
-                        "npc_ids": list(scheduled_npc_ids),
-                        "stopped_at_npc_id": npc_id,
-                        "stopped_reason": "npc_side_effects_failed",
-                    }
-                )
-                self._record_io(
-                    kind="agent_io",
-                    agent_name="npc_performer",
-                    input_data=npc_input,
-                    output_data=output,
-                    extra={
-                        "branch": "npc_performer",
-                        "turn_id": turn_id,
-                        "trace_id": trace_id,
-                        "npc_id": npc_id,
-                        "npc_state": npc_state_result,
-                        "apply_status": "side_effects_failed",
-                        "error": str(exc),
-                    },
-                )
-                return (
-                    outputs,
-                    downstream_chain,
-                    {
-                        "code": "NPC_SIDE_EFFECTS_FAILED",
-                        "message": self.config.system.fallback_error,
-                        "retry_count": 0,
-                        "retriable": False,
-                        "rollback_applied": True,
-                        "degraded_output": self.config.system.fallback_error,
-                        "details": {
-                            "phase": "npc_performer",
-                            "npc_id": npc_id,
-                            "origin": str(exc),
                         },
                     },
                 )
@@ -2035,6 +1473,7 @@ class Engine:
         base_input: StateAgentInput,
         checkpoint: Dict[str, Any],
         branch_logs: List[Dict[str, Any]],
+        post_apply_hook: Optional[Callable[[], None]] = None,
     ) -> Dict[str, Any]:
         started = time.perf_counter()
         started_at = datetime.now(timezone.utc).isoformat()
@@ -2101,6 +1540,8 @@ class Engine:
             try:
                 async with self._state_commit_lock:
                     apply_result = await asyncio.to_thread(self.state_patch_runtime.apply_patch, output)
+                    if post_apply_hook is not None:
+                        await asyncio.to_thread(post_apply_hook)
 
                 ended = time.perf_counter()
                 self._record_io(
@@ -2171,6 +1612,58 @@ class Engine:
                         "patch_error": {"code": exc.code, "message": exc.message, "details": exc.details},
                     },
                 )
+            except Exception as exc:
+                if post_apply_hook is None:
+                    raise
+
+                async with self._state_commit_lock:
+                    await asyncio.to_thread(self.world_state.restore_checkpoint, checkpoint)
+                self._persist_world_snapshot()
+
+                fallback = FallbackError(
+                    code="STATE_POST_APPLY_FAILED",
+                    message=self.config.system.fallback_error,
+                    retry_count=retry_seq,
+                    retriable=False,
+                    rollback_applied=True,
+                    degraded_output=self.config.system.fallback_error,
+                    details={"phase": "state_post_apply", "error": str(exc)},
+                )
+                error_history.append(fallback.model_dump(mode="json"))
+
+                ended = time.perf_counter()
+                self._record_io(
+                    kind="agent_io",
+                    agent_name="state_change",
+                    input_data=current_input,
+                    output_data=output,
+                    extra={
+                        "branch": "state",
+                        "turn_id": current_input.system_input.execution.turn_id,
+                        "trace_id": current_input.system_input.execution.trace_id,
+                        "retry_seq": retry_seq,
+                        "duration_ms": round((ended - started) * 1000, 3),
+                        "apply_status": "post_apply_failed",
+                        "error": str(exc),
+                    },
+                )
+                branch_logs.append(
+                    {
+                        "branch": "state",
+                        "turn_id": current_input.system_input.execution.turn_id,
+                        "trace_id": current_input.system_input.execution.trace_id,
+                        "started_at": started_at,
+                        "duration_ms": round((ended - started) * 1000, 3),
+                    }
+                )
+                return {
+                    "ok": False,
+                    "retry_count": retry_seq,
+                    "patch": output.model_dump(mode="json") if output is not None else None,
+                    "apply_result": None,
+                    "error_history": error_history,
+                    "fallback_error": fallback.model_dump(mode="json"),
+                }
 
         async with self._state_commit_lock:
             await asyncio.to_thread(self.world_state.restore_checkpoint, checkpoint)

@@ -92,20 +92,36 @@ description:
         state.reset(store)
 
         snapshot_before = state.get_snapshot()
-        self.assertIn(char.id, snapshot_before["maps"][map_1.id]["char_index"])
+        self.assertIn(char.id, snapshot_before.maps[map_1.id].char_index)
 
         state.update_character_location(char.id, map_2.id)
         snapshot_after = state.get_snapshot()
 
-        self.assertNotIn(char.id, snapshot_after["maps"][map_1.id]["char_index"])
-        self.assertIn(char.id, snapshot_after["maps"][map_2.id]["char_index"])
+        self.assertNotIn(char.id, snapshot_after.maps[map_1.id].char_index)
+        self.assertIn(char.id, snapshot_after.maps[map_2.id].char_index)
 
         # Tampering with returned map object should not affect real world indexes.
         leaked_copy = state.get_map(map_2.id)
         leaked_copy.char_index.append("char-hacker-9999")
 
         snapshot_final = state.get_snapshot()
-        self.assertNotIn("char-hacker-9999", snapshot_final["maps"][map_2.id]["char_index"])
+        self.assertNotIn("char-hacker-9999", snapshot_final.maps[map_2.id].char_index)
+
+    def test_world_snapshot_typed_access_and_payload_compatibility(self):
+        room = MapEntity(id="map-room-0001", name="Room")
+        player = CharacterEntity(id="char-player-0000", name="Player", location=room.id)
+        state = WorldState()
+        state.reset(WorldEntityStore(maps={room.id: room}, characters={player.id: player}, items={}))
+
+        snapshot = state.get_snapshot()
+        self.assertEqual(snapshot.version, state.get_version())
+        self.assertIn(room.id, snapshot.maps)
+        self.assertIn(player.id, snapshot.characters)
+
+        payload = snapshot.to_payload()
+        self.assertEqual(payload["version"], snapshot.version)
+        self.assertIn(room.id, payload["maps"])
+        self.assertIn(player.id, payload["characters"])
 
 
 if __name__ == "__main__":

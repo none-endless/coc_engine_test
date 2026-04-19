@@ -158,7 +158,7 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
         self.assertTrue(Path(self.narrative_db_path).exists())
         latest_snapshot = SqliteWorldSnapshotRepository(self.world_db_path).load_latest_snapshot()
         self.assertIsNotNone(latest_snapshot)
-        self.assertEqual(latest_snapshot["version"], self.world.get_snapshot()["version"])
+        self.assertEqual(latest_snapshot["version"], self.world.get_snapshot().version)
 
     def test_invisible_evolution_does_not_generate_narrative_or_merger(self):
         class InvisibleLLMService(Phase4FakeLLMService):

@@ -19,10 +19,13 @@ class MergerAgent:
     def run(self, *, agent_input: MergerAgentInput) -> MergerAgentOutput:
         """消费 e7（及可选 narrative 文本），输出合并后的精简叙事。"""
         execution = agent_input.system_input.execution
+        user_payload = agent_input.llm_input.model_dump(mode="json")
+        user_payload.pop("narrative_info", None)
+
         llm_output = self.llm_service.call_llm_json(
             agent_name="merger",
             system_prompt=MERGER_SYSTEM_PROMPT,
-            user_payload=agent_input.llm_input.model_dump(mode="json"),
+            user_payload=user_payload,
             output_model=MergerAgentLlmOutput,
             retry_budget=0,
             validation_feedback=None,

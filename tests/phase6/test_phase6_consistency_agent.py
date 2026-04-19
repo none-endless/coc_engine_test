@@ -257,6 +257,86 @@ class TestPhase6ConsistencyAgent(unittest.TestCase):
 
         self.assertIsNone(result["consistency"])
 
+    def test_consistency_retries_after_apply_validation_failure(self):
+        class RetryOnceConsistencyLLMService(Phase6FakeLLMService):
+            def __init__(self) -> None:
+                super().__init__(add_interval=2)
+                self.consistency_call_count = 0
+
+            def call_llm_json(
+                self,
+                *,
+                agent_name: str,
+                system_prompt: str,
+                user_payload: Dict[str, Any],
+                output_model: Type[BaseModel],
+                retry_budget: int,
+                validation_feedback: Any = None,
+            ) -> BaseModel:
+                if output_model is ConsistencyAgentLlmOutput:
+                    self.consistency_call_count += 1
+                    if self.consistency_call_count == 1:
+                        return output_model.model_validate(
+                            {
+                                "summary_items": [
+                                    {"kind": "narration", "value": "第一次输出仅包含叙事摘要。"},
+                                ],
+                                "can_proceed": True,
+                                "system_message": "",
+                            }
+                        )
+                    return output_model.model_validate(
+                        {
+                            "summary_items": [
+                                {"kind": "narration", "value": "重试后补齐完整一致性摘要。"},
+                                {"kind": "description", "value": "墙面上出现了新的擦痕。"},
+                                {"kind": "key_facts", "value": "守卫确认擦痕异常并继续调查。"},
+                            ],
+                            "can_proceed": True,
+                            "system_message": "",
+                        }
+                    )
+                return super().call_llm_json(
+                    agent_name=agent_name,
+                    system_prompt=system_prompt,
+                    user_payload=user_payload,
+                    output_model=output_model,
+                    retry_budget=retry_budget,
+                    validation_feedback=validation_feedback,
+                )
+
+        service = RetryOnceConsistencyLLMService()
+        service.config = ConfigLoader.load(
+            cli_overrides={
+                "system.max_retry_count": 1,
+                "description.add_interval": 2,
+                "description.merge_threshold": 0,
+                "agent.narrative.recent_turns": 5,
+                "agent.npc.shortlog_merge_threshold": 1,
+                "storage.world.sqlite_path": self.world_db_path,
+                "storage.narrative.sqlite_path": self.narrative_db_path,
+            }
+        )
+        engine = Engine(world_state=self.world, mode="phase3", llm_service=service)
+        engine._narrative_info.recent = [
+            NarrativeEntry(turn=0, content="你觉得房间很安静。"),
+            NarrativeEntry(turn=1, content="空气里隐约有灰尘被扰动。"),
+        ]
+
+        result = engine.run_turn(
+            raw_input="我观察房间",
+            actor_id="char-player-0000",
+            turn_id=2,
+            trace_id=2402,
+        )
+
+        self.assertIsNotNone(result["consistency"])
+        self.assertTrue(result["consistency"]["ok"])
+        self.assertEqual(result["consistency"]["retry_count"], 1)
+        self.assertEqual(service.consistency_call_count, 2)
+        self.assertTrue(result["consistency"]["error_history"])
+        self.assertIn("数量不匹配", result["consistency"]["error_history"][0]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

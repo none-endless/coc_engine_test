@@ -2,14 +2,12 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
+from src.config.constants import DEFAULT_DEXTERITY_ATTRIBUTE_KEYS
 from src.agent.llm.service import LLMServiceBase
 from src.agent.prompt.npc_scheduler_prompt import NPC_SCHEDULER_SYSTEM_PROMPT
 from src.data.model.agent_input import NpcSchedulerAgentInput
 from src.data.model.agent_output import NpcSchedulerAgentLlmOutput, NpcSchedulerAgentOutput, NpcSchedulerAgentSystemOutput
 from src.data.model.world_state import WorldState
-
-
-DEXTERITY_ATTRIBUTE_KEYS = {"dexterity", "敏捷"}
 
 
 class NpcSchedulerAgent:
@@ -29,17 +27,20 @@ class NpcSchedulerAgent:
         self.cooldown_turns = max(0, int(cooldown_turns))
         self.dexterity_attribute_keys = {
             str(value).strip().lower()
-            for value in (dexterity_attribute_keys or DEXTERITY_ATTRIBUTE_KEYS)
+            for value in (dexterity_attribute_keys or DEFAULT_DEXTERITY_ATTRIBUTE_KEYS)
             if str(value).strip()
-        } or set(DEXTERITY_ATTRIBUTE_KEYS)
+        } or set(DEFAULT_DEXTERITY_ATTRIBUTE_KEYS)
         self._npc_last_scheduled_turn: Dict[str, int] = {}
 
     def run(self, *, agent_input: NpcSchedulerAgentInput) -> NpcSchedulerAgentOutput:
         execution = agent_input.system_input.execution
+        user_payload = agent_input.llm_input.model_dump(mode="json")
+        user_payload.pop("narrative_info", None)
+
         llm_output = self.llm_service.call_llm_json(
             agent_name="npc_scheduler",
             system_prompt=NPC_SCHEDULER_SYSTEM_PROMPT,
-            user_payload=agent_input.llm_input.model_dump(mode="json"),
+            user_payload=user_payload,
             output_model=NpcSchedulerAgentLlmOutput,
             retry_budget=0,
             validation_feedback=None,

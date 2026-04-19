@@ -31,6 +31,12 @@ class DMAgent:
 		self,
 		agent_input: DmAgentInput,
 	) -> DmAnalyzeResult:
+		user_payload = agent_input.llm_input.model_dump(mode="json")
+		user_payload.pop("narrative_info", None)
+		agent_memory_payload = user_payload.get("agent_memory")
+		if isinstance(agent_memory_payload, dict):
+			agent_memory_payload.pop("dialogue_log", None)
+
 		retries = 0
 		errors: List[str] = []
 		feedback: Optional[str] = None
@@ -44,7 +50,7 @@ class DMAgent:
 				llm_output = self.llm_service.call_llm_json(
 					agent_name="dmagent",
 					system_prompt=DM_SYSTEM_PROMPT,
-					user_payload=agent_input.llm_input.model_dump(mode="json"),
+					user_payload=user_payload,
 					output_model=DmAgentLlmOutput,
 					retry_budget=0,
 					validation_feedback=feedback,

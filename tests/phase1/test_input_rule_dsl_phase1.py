@@ -1,8 +1,19 @@
 import unittest
 
-from src.data.model.base import Attribute, CharacterEntity, Description, ItemEntity, MapEntity, WorldEntityStore
+from src.agent.llm.service import LLMServiceBase
+from src.data.model.base import (
+    Attribute,
+    CharacterEntity,
+    Description,
+    ExtensionSchemaItem,
+    ExtensionSchemaRegistry,
+    ItemEntity,
+    MapEntity,
+    WorldEntityStore,
+)
 from src.data.model.world_state import WorldState
 from src.rule import DslEngine, InputSystem, RuleSystem
+from src.utils.world_provider import WorldDataProvider
 
 
 class _FixedRandom:
@@ -70,8 +81,61 @@ class TestPhase1InputAndRule(unittest.TestCase):
             "and item-key-0008.location == char-player-0000"
         )
         snapshot = self.world_state.get_snapshot()
-        ok = DslEngine().evaluate(expression=expression, snapshot=snapshot, expected_version=snapshot["version"])
+        ok = DslEngine().evaluate(expression=expression, snapshot=snapshot, expected_version=snapshot.version)
         self.assertTrue(ok)
+
+    def test_json_extraction_handles_fenced_markdown_payload(self):
+        content = """\n这是回复前缀\n```json\n{\n  \"intent\": \"talk\",\n  \"score\": 1\n}\n```\n这是回复后缀\n"""
+        parsed = LLMServiceBase._extract_json_object(content)
+        self.assertEqual(parsed["intent"], "talk")
+        self.assertEqual(parsed["score"], 1)
+
+    def test_state_view_writable_fields_follow_model_metadata_and_registry(self):
+        store = self.world_state.get_store_copy()
+        room = store.maps["map-cellar-0001"]
+        player = store.characters[self.player_id]
+        key = store.items["item-key-0008"]
+        key.location = room.id
+
+        room.extensions = {
+            "quest.stage": "phase1",
+            "quest.locked": "hidden",
+        }
+        player.extensions = {
+            "quest.stage": "phase1",
+            "quest.locked": "hidden",
+        }
+        key.extensions = {
+            "quest.stage": "phase1",
+            "quest.locked": "hidden",
+        }
+        store.extension_registry = ExtensionSchemaRegistry(
+            fields={
+                "quest.stage": ExtensionSchemaItem(key="quest.stage", mutable=True, value_type="string"),
+                "quest.locked": ExtensionSchemaItem(key="quest.locked", mutable=False, value_type="string"),
+            }
+        )
+        self.world_state.reset(store)
+
+        provider = WorldDataProvider(world_state=self.world_state)
+        views = provider.precompute_all_views(current_map_id="map-cellar-0001", turn=1)
+        entity_paths = {
+            entity.entity_id: {field.field_path for field in entity.writable_fields}
+            for entity in views.state_agent_view.entities
+        }
+
+        self.assertIn("description.add", entity_paths["map-cellar-0001"])
+        self.assertIn("extensions.quest.stage", entity_paths["map-cellar-0001"])
+        self.assertNotIn("extensions.quest.locked", entity_paths["map-cellar-0001"])
+
+        self.assertIn("location", entity_paths[self.player_id])
+        self.assertIn("attributes.hp.value", entity_paths[self.player_id])
+        self.assertIn("extensions.quest.stage", entity_paths[self.player_id])
+        self.assertNotIn("extensions.quest.locked", entity_paths[self.player_id])
+
+        self.assertIn("location", entity_paths["item-key-0008"])
+        self.assertIn("extensions.quest.stage", entity_paths["item-key-0008"])
+        self.assertNotIn("extensions.quest.locked", entity_paths["item-key-0008"])
 
     def test_coc_check_result_format(self):
         result = self.rule_system.run_coc_check(

@@ -38,6 +38,13 @@ class NpcPerformerAgent:
         execution = agent_input.system_input.execution
         npc_id = agent_input.system_input.execution.debug.get("npc_id", agent_input.llm_input.world_info.id)
         actor = self.world_state.get_character(npc_id)
+        user_payload = agent_input.llm_input.model_dump(mode="json")
+        agent_memory_payload = user_payload.get("agent_memory")
+        if isinstance(agent_memory_payload, dict):
+            agent_memory_payload.pop("log", None)
+            agent_memory_payload.pop("short_log", None)
+            agent_memory_payload.pop("long_term_memory", None)
+
         available_attributes = [item.id for item in agent_input.llm_input.available_attributes if item.id]
         if not available_attributes:
             available_attributes = sorted(actor.attributes.keys())
@@ -54,7 +61,7 @@ class NpcPerformerAgent:
                 llm_output = self.llm_service.call_llm_json(
                     agent_name="npc_performer",
                     system_prompt=NPC_PERFORMER_SYSTEM_PROMPT,
-                    user_payload=agent_input.llm_input.model_dump(mode="json"),
+                    user_payload=user_payload,
                     output_model=NpcPerformerAgentLlmOutput,
                     retry_budget=0,
                     validation_feedback=feedback,
@@ -122,7 +129,7 @@ class NpcPerformerAgent:
         )
         return output
 
-    def apply_side_effects(self, *, agent_input: NpcPerformerAgentInput, output: NpcPerformerAgentOutput) -> None:
+    def apply_side_effects(self, *, output: NpcPerformerAgentOutput) -> None:
         """在系统确认允许提交后，再把 performer 结果写回 NPC 目标与记忆。"""
         npc_id = output.system_output.id
         store = self.world_state.get_store_copy()

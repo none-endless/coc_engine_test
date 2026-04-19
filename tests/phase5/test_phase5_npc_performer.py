@@ -101,7 +101,10 @@ class TestPhase5NpcPerformer(unittest.TestCase):
             id="char-player-0000",
             name="玩家",
             location=room.id,
-            attributes={"dexterity": Attribute(id="dexterity", name="敏捷", value=70, max_value=100, min_value=0)},
+            attributes={
+                "dexterity": Attribute(id="dexterity", name="敏捷", value=70, max_value=100, min_value=0),
+                "fight": Attribute(id="fight", name="格斗", value=60, max_value=100, min_value=0),
+            },
             status={"health": Status(id="health", name="生命", value=10, max_value=10, min_value=0)},
         )
         guard = CharacterEntity(
@@ -154,6 +157,22 @@ class TestPhase5NpcPerformer(unittest.TestCase):
         self.assertTrue(chain_item["e7"]["narrative_list"])
         merger_causality = engine.dm_agent.llm_service.payloads["merger"]["e7"]["narrative_causality"]
         self.assertGreaterEqual(merger_causality.count("'source': 'evolution'"), 2)
+        self.assertNotIn("narrative_info", engine.dm_agent.llm_service.payloads["evolution"])
+        self.assertNotIn("narrative_info", engine.dm_agent.llm_service.payloads["npc_scheduler"])
+        self.assertNotIn("narrative_info", engine.dm_agent.llm_service.payloads["narrative"])
+        self.assertNotIn("narrative_info", engine.dm_agent.llm_service.payloads["merger"])
+
+        performer_payload = engine.dm_agent.llm_service.payloads["npc_performer"]
+        available_attr_ids = {item["id"] for item in performer_payload["available_attributes"]}
+        self.assertIn("dexterity", available_attr_ids)
+        self.assertIn("fight", available_attr_ids)
+        valid_character_ids = {item["id"] for item in performer_payload["valid_characters"]}
+        self.assertIn("char-player-0000", valid_character_ids)
+        self.assertIn("char-guard-0001", valid_character_ids)
+        self.assertIn("char-helper-0002", valid_character_ids)
+        self.assertNotIn("log", performer_payload.get("agent_memory", {}))
+        self.assertNotIn("short_log", performer_payload.get("agent_memory", {}))
+        self.assertNotIn("long_term_memory", performer_payload.get("agent_memory", {}))
 
         updated_guard = self.world.get_character("char-guard-0001")
         self.assertEqual(updated_guard.goal.active_goal, "调查可疑声响")
