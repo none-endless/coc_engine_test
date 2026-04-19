@@ -17,6 +17,10 @@ CONSISTENCY_SYSTEM_PROMPT = """
 - narration_candidates: `[{turn, content}, ...]`
 - description_candidates: `[{entity_id, public, add}, ...]`
 - key_facts_candidates: `[{character_id, key_facts, short_log}, ...]`
+- config_json: 引擎完整配置快照（与 config/config.yaml 同构）
+
+你应读取 `config_json` 中与一致性维护相关的配置（例如阈值、窗口、阻断策略）来决定压缩粒度，
+但不得违反输出结构约束。
 
 ## 输出格式（必须严格遵守）
 

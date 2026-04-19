@@ -1,0 +1,251 @@
+version: 1
+title: Engine Config Form
+description: 覆盖核心机制与主要魔法数字的配置表单定义（与 config.yaml / config.schema.yaml / loader 同步）
+
+sections:
+  - id: llm
+    label: LLM 配置
+    fields:
+      - path: llm.api_key
+        label: API Key
+        type: password
+        required: true
+        default: ""
+      - path: llm.api_base
+        label: API Base URL
+        type: text
+        required: true
+        default: https://api.openai.com/v1
+      - path: llm.model
+        label: Model Name
+        type: text
+        required: true
+        default: gpt-4
+      - path: llm.enable_reasoning
+        label: Enable Reasoning
+        type: boolean
+        required: true
+        default: false
+      - path: llm.temperature
+        label: Temperature
+        type: number
+        required: true
+        default: 0.7
+        min: 0
+        max: 2
+      - path: llm.max_tokens
+        label: Max Tokens
+        type: integer
+        required: true
+        default: 2000
+        min: 100
+        max: 16000
+      - path: llm.timeout
+        label: Timeout (seconds)
+        type: integer
+        required: true
+        default: 30
+        min: 1
+        max: 300
+
+  - id: system
+    label: 系统执行策略
+    fields:
+      - path: system.max_retry_count
+        label: Max Retry Count
+        type: integer
+        required: true
+        default: 3
+        min: 1
+        max: 10
+      - path: system.retry_timeout_ms
+        label: Retry Timeout (ms)
+        type: integer
+        required: true
+        default: 5000
+        min: 1000
+        max: 30000
+      - path: system.fallback_error
+        label: Fallback Error Message
+        type: text
+        required: true
+        default: 系统繁忙，请稍后重试
+      - path: system.snapshot_interval
+        label: Snapshot Interval (turns)
+        type: integer
+        required: true
+        default: 10
+        min: 1
+
+  - id: agent_dm
+    label: Agent - DM
+    fields:
+      - path: agent.dm.memory_turns
+        label: DM Memory Turns
+        type: integer
+        required: true
+        default: 5
+        min: 1
+
+  - id: agent_npc
+    label: Agent - NPC
+    fields:
+      - path: agent.npc.memory_turns
+        label: NPC Memory Turns
+        type: integer
+        required: true
+        default: 15
+        min: 1
+      - path: agent.npc.shortlog_turns
+        label: NPC Shortlog Turns
+        type: integer
+        required: true
+        default: 30
+        min: 1
+      - path: agent.npc.shortlog_merge_threshold
+        label: NPC Shortlog Merge Threshold
+        type: integer
+        required: true
+        default: 5
+        min: 1
+      - path: agent.npc.max_actions_per_turn
+        label: NPC Max Actions Per Turn
+        type: integer
+        required: true
+        default: 3
+        min: 1
+      - path: agent.npc.cooldown_turns
+        label: NPC Cooldown Turns
+        type: integer
+        required: true
+        default: 1
+        min: 0
+
+  - id: agent_narrative
+    label: Agent - Narrative
+    fields:
+      - path: agent.narrative.recent_turns
+        label: Narrative Recent Turns
+        type: integer
+        required: true
+        default: 5
+        min: 1
+
+  - id: storage
+    label: 持久化存储
+    fields:
+      - path: storage.world.sqlite_path
+        label: World Snapshot SQLite Path
+        type: text
+        required: true
+        default: world/world_snapshots.sqlite3
+      - path: storage.narrative.sqlite_path
+        label: Narrative SQLite Path
+        type: text
+        required: true
+        default: world/narrative_truth.sqlite3
+
+  - id: description
+    label: 描述合并策略
+    fields:
+      - path: description.add_interval
+        label: Description Merge Interval (turns)
+        type: integer
+        required: true
+        default: 10
+        min: 1
+      - path: description.merge_threshold
+        label: Description Merge Threshold
+        type: integer
+        required: true
+        default: 3
+        min: 1
+
+  - id: consistency
+    label: 一致性维护策略
+    fields:
+      - path: consistency.enabled
+        label: Enable Consistency Agent
+        type: boolean
+        required: true
+        default: true
+      - path: consistency.trigger_interval_turns
+        label: Consistency Trigger Interval (turns)
+        type: integer
+        required: true
+        default: 10
+        min: 1
+      - path: consistency.description_add_threshold
+        label: Description Add Threshold
+        type: integer
+        required: true
+        default: 3
+        min: 0
+      - path: consistency.shortlog_threshold
+        label: ShortLog Threshold
+        type: integer
+        required: true
+        default: 5
+        min: 0
+      - path: consistency.min_narration_candidates
+        label: Minimum Narration Candidates
+        type: integer
+        required: true
+        default: 2
+        min: 1
+      - path: consistency.include_full_config_json
+        label: Include Full Config JSON In Consistency Input
+        type: boolean
+        required: true
+        default: true
+      - path: consistency.block_on_failure
+        label: Block Turn On Consistency Failure
+        type: boolean
+        required: true
+        default: true
+      - path: consistency.narration_fallback_recent_changes
+        label: Fallback Recent Change Window
+        type: integer
+        required: true
+        default: 3
+        min: 1
+
+  - id: runtime
+    label: 运行时调优（魔法数字）
+    fields:
+      - path: runtime.trace_id_start
+        label: Trace ID Start
+        type: integer
+        required: true
+        default: 1000
+        min: 0
+      - path: runtime.trace_id_step
+        label: Trace ID Step
+        type: integer
+        required: true
+        default: 1
+        min: 1
+      - path: runtime.turn_id_step
+        label: Turn ID Step
+        type: integer
+        required: true
+        default: 1
+        min: 1
+      - path: runtime.stream_chunk_size
+        label: Stream Chunk Size
+        type: integer
+        required: true
+        default: 6
+        min: 1
+      - path: runtime.stream_chunk_delay_sec
+        label: Stream Chunk Delay (sec)
+        type: number
+        required: true
+        default: 0.04
+        min: 0
+      - path: runtime.engine_poll_interval_sec
+        label: Engine Poll Interval (sec)
+        type: number
+        required: true
+        default: 0.05
+        min: 0

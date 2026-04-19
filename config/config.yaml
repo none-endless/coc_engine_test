@@ -34,3 +34,21 @@ storage:
 description:
   add_interval: 10
   merge_threshold: 3
+
+consistency:
+  enabled: true
+  trigger_interval_turns: 10
+  description_add_threshold: 3
+  shortlog_threshold: 5
+  min_narration_candidates: 2
+  include_full_config_json: true
+  block_on_failure: true
+  narration_fallback_recent_changes: 3
+
+runtime:
+  trace_id_start: 1000
+  trace_id_step: 1
+  turn_id_step: 1
+  stream_chunk_size: 6
+  stream_chunk_delay_sec: 0.04
+  engine_poll_interval_sec: 0.05

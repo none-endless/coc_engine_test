@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from .base import MemoryForNpc
+from .infra import TurnEnvelope
 from .input.agent_chain_input import (
     DmAgentChainInput,
     E4EvolutionStepResult,
@@ -24,7 +25,6 @@ from .input.agent_chain_input import (
     NpcPerformerAgentChainInput,
     NpcSchedulerAgentChainInput,
     StateChangeAgentChainInput,
-    TurnEnvelope,
 )
 from .input.agent_map_intput import (
     DMWorldView,
@@ -214,6 +214,8 @@ class NpcPerformerAgentLlmInput(BaseModel):
     e1: E1LlmView = Field(description="链路输入（e1 精简）")
     world_info: NpcWorldView = Field(description="世界信息（NPC 切片）")
     agent_memory: MemoryForNpc = Field(description="NPC 记忆")
+    available_attributes: list[AvailableAttributeRef] = Field(default_factory=list, description="当前 NPC 可用于鉴定的属性列表")
+    valid_characters: list[AvailableCharacterRef] = Field(default_factory=list, description="当前可引用的合法角色列表")
 
 
 class NpcPerformerAgentSystemInput(BaseModel):
@@ -310,6 +312,7 @@ class ConsistencyAgentLlmInput(BaseModel):
     description_candidates: List[ConsistencyDescriptionCandidate] = Field(default_factory=list, description="待压缩描述列表")
     key_facts_candidates: List[ConsistencyKeyFactsCandidate] = Field(default_factory=list, description="待提炼 key_facts 列表")
     recent_change_logs: List[ConsistencyRecentChangeLog] = Field(default_factory=list, description="最近若干回合的变更日志")
+    config_json: Dict[str, Any] = Field(default_factory=dict, description="完整配置快照，供一致性策略决策使用")
 
 
 class ConsistencyAgentSystemInput(BaseModel):

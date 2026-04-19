@@ -310,8 +310,11 @@ def main() -> int:
 		return 1
 
 	rule_system = engine.rule_system
+	cfg = ConfigLoader.load(config_path=str(args.config))
 	turn_id = bundle.turn_start
-	trace_id = 1000
+	trace_id = int(cfg.runtime.trace_id_start)
+	turn_id_step = max(1, int(cfg.runtime.turn_id_step))
+	trace_id_step = max(1, int(cfg.runtime.trace_id_step))
 	causality_chain = E7CausalityChain()
 
 	print(f"scene: {bundle.scene_name}")
@@ -362,8 +365,8 @@ def main() -> int:
 
 		# e7 只用于单回合拼装，回合结束后重置。
 		causality_chain = E7CausalityChain()
-		turn_id += 1
-		trace_id += 1
+		turn_id += turn_id_step
+		trace_id += trace_id_step
 
 
 if __name__ == "__main__":

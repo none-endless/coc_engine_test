@@ -56,6 +56,20 @@ NPC 行为分为三种类型：
 }
 ```
 
+## 输入中的结构化信息源
+
+系统会提供两组可引用列表：
+
+- `available_attributes`: 当前 NPC 可用于鉴定的属性列表，每项包含 `id` 和 `name`
+- `valid_characters`: 当前可引用角色列表，每项包含 `id` 和 `name`
+
+你在输出中必须遵守：
+
+- `attributes` 只能使用 `available_attributes` 中提供的 `id`
+- `against_char_id` 只能使用 `valid_characters` 中提供的 `id`
+- 当 `routing_hint="against"` 时，`against_char_id` 第一个元素必须是发起方 NPC 自身 id
+- 禁止输出不存在的属性 id 和角色 id
+
 ### 字段说明
 
 - `intent`：互动类型，决定后续处理流程
@@ -134,6 +148,7 @@ NPC 有自己的目标系统：
 - 常见错误：
   - 鉴定信息格式不正确
   - 使用了不存在的 NPC ID
+  - 使用了不在 `available_attributes` 或 `valid_characters` 列表中的 id
   - 行为描述过于冗长
 
 ## 示例

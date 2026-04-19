@@ -71,12 +71,34 @@ class DescriptionConfig(BaseModel):
     merge_threshold: int = Field(default=3)
 
 
+class ConsistencyConfig(BaseModel):
+    enabled: bool = Field(default=True)
+    trigger_interval_turns: int = Field(default=10)
+    description_add_threshold: int = Field(default=3)
+    shortlog_threshold: int = Field(default=5)
+    min_narration_candidates: int = Field(default=2)
+    include_full_config_json: bool = Field(default=True)
+    block_on_failure: bool = Field(default=True)
+    narration_fallback_recent_changes: int = Field(default=3)
+
+
+class RuntimeConfig(BaseModel):
+    trace_id_start: int = Field(default=1000)
+    trace_id_step: int = Field(default=1)
+    turn_id_step: int = Field(default=1)
+    stream_chunk_size: int = Field(default=6)
+    stream_chunk_delay_sec: float = Field(default=0.04)
+    engine_poll_interval_sec: float = Field(default=0.05)
+
+
 class EngineConfig(BaseModel):
     llm: LlmConfig = Field(default_factory=LlmConfig)
     system: SystemConfig = Field(default_factory=SystemConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     description: DescriptionConfig = Field(default_factory=DescriptionConfig)
+    consistency: ConsistencyConfig = Field(default_factory=ConsistencyConfig)
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
 
 
 class ConfigLoader:

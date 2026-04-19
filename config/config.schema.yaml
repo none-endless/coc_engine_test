@@ -12,7 +12,7 @@ properties:
         default: ""
       model:
         type: string
-        enum: [gpt-4, gpt-3.5-turbo, claude-3]
+        minLength: 1
         default: gpt-4
       enable_reasoning:
         type: boolean
@@ -25,16 +25,19 @@ properties:
       max_tokens:
         type: integer
         minimum: 100
-        maximum: 8000
+        maximum: 16000
         default: 2000
       timeout:
         type: integer
         minimum: 1
+        maximum: 300
         default: 30
       api_base:
         type: string
+        minLength: 1
         default: https://api.openai.com/v1
     required: [api_key, model, enable_reasoning, temperature, max_tokens, timeout, api_base]
+
   system:
     type: object
     additionalProperties: false
@@ -57,6 +60,7 @@ properties:
         minimum: 1
         default: 10
     required: [max_retry_count, retry_timeout_ms, fallback_error, snapshot_interval]
+
   agent:
     type: object
     additionalProperties: false
@@ -105,6 +109,29 @@ properties:
             default: 5
         required: [recent_turns]
     required: [dm, npc, narrative]
+
+  storage:
+    type: object
+    additionalProperties: false
+    properties:
+      world:
+        type: object
+        additionalProperties: false
+        properties:
+          sqlite_path:
+            type: string
+            default: world/world_snapshots.sqlite3
+        required: [sqlite_path]
+      narrative:
+        type: object
+        additionalProperties: false
+        properties:
+          sqlite_path:
+            type: string
+            default: world/narrative_truth.sqlite3
+        required: [sqlite_path]
+    required: [world, narrative]
+
   description:
     type: object
     additionalProperties: false
@@ -118,4 +145,70 @@ properties:
         minimum: 1
         default: 3
     required: [add_interval, merge_threshold]
-required: [llm, system, agent, description]
+
+  consistency:
+    type: object
+    additionalProperties: false
+    properties:
+      enabled:
+        type: boolean
+        default: true
+      trigger_interval_turns:
+        type: integer
+        minimum: 1
+        default: 10
+      description_add_threshold:
+        type: integer
+        minimum: 0
+        default: 3
+      shortlog_threshold:
+        type: integer
+        minimum: 0
+        default: 5
+      min_narration_candidates:
+        type: integer
+        minimum: 1
+        default: 2
+      include_full_config_json:
+        type: boolean
+        default: true
+      block_on_failure:
+        type: boolean
+        default: true
+      narration_fallback_recent_changes:
+        type: integer
+        minimum: 1
+        default: 3
+    required: [enabled, trigger_interval_turns, description_add_threshold, shortlog_threshold, min_narration_candidates, include_full_config_json, block_on_failure, narration_fallback_recent_changes]
+
+  runtime:
+    type: object
+    additionalProperties: false
+    properties:
+      trace_id_start:
+        type: integer
+        minimum: 0
+        default: 1000
+      trace_id_step:
+        type: integer
+        minimum: 1
+        default: 1
+      turn_id_step:
+        type: integer
+        minimum: 1
+        default: 1
+      stream_chunk_size:
+        type: integer
+        minimum: 1
+        default: 6
+      stream_chunk_delay_sec:
+        type: number
+        minimum: 0
+        default: 0.04
+      engine_poll_interval_sec:
+        type: number
+        minimum: 0
+        default: 0.05
+    required: [trace_id_start, trace_id_step, turn_id_step, stream_chunk_size, stream_chunk_delay_sec, engine_poll_interval_sec]
+
+required: [llm, system, agent, storage, description, consistency, runtime]

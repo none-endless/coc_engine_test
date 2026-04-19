@@ -48,6 +48,11 @@ class AppRuntime:
     mode: str
     use_real_llm: bool
     config_path: str
+    turn_id_step: int
+    trace_id_step: int
+    stream_chunk_size: int
+    stream_chunk_delay_sec: float
+    engine_poll_interval_sec: float
     game_over: bool
     ending_text: str
 
@@ -222,6 +227,13 @@ def build_runtime(
     engine.merger_agent.llm_service = llm_service
 
     restored_turn = bundle.turn_start
+    turn_id_step = max(1, int(config.runtime.turn_id_step))
+    trace_id_step = max(1, int(config.runtime.trace_id_step))
+    trace_id_start = int(config.runtime.trace_id_start)
+    stream_chunk_size = max(1, int(config.runtime.stream_chunk_size))
+    stream_chunk_delay_sec = max(0.0, float(config.runtime.stream_chunk_delay_sec))
+    engine_poll_interval_sec = max(0.0, float(config.runtime.engine_poll_interval_sec))
+
     narrative_info = getattr(engine, "_narrative_info", None)
     if narrative_info is not None:
         existing_turns = [int(item.turn) for item in getattr(narrative_info, "recent", [])]
@@ -234,7 +246,7 @@ def build_runtime(
         world_dir=world_dir,
         actor_id=bundle.actor_id,
         turn_id=restored_turn,
-        trace_id=max(1000, 1000 + restored_turn - 1),
+        trace_id=max(trace_id_start, trace_id_start + (max(0, restored_turn - 1) * trace_id_step)),
         causality_chain=E7CausalityChain(),
         endings=bundle.endings,
         io_records=io_bucket,
@@ -243,6 +255,11 @@ def build_runtime(
         mode=mode,
         use_real_llm=use_real_llm,
         config_path=config_path,
+        turn_id_step=turn_id_step,
+        trace_id_step=trace_id_step,
+        stream_chunk_size=stream_chunk_size,
+        stream_chunk_delay_sec=stream_chunk_delay_sec,
+        engine_poll_interval_sec=engine_poll_interval_sec,
         game_over=False,
         ending_text="",
     )
@@ -588,13 +605,13 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
                 candidate = extract_narrative_preview_from_io(runtime.io_records, io_start)
                 if candidate:
                     preview_text = render_chunks_safely(
-                        chunk_text_for_stream(candidate),
+                        chunk_text_for_stream(candidate, chunk_size=runtime.stream_chunk_size),
                         placeholder=body_placeholder,
-                        delay_sec=STREAM_CHUNK_DELAY_SEC,
+                        delay_sec=runtime.stream_chunk_delay_sec,
                     )
                     title_placeholder.caption("叙事预览")
                     status_placeholder.caption("narrative_agent 已返回，后台仍在处理其余分支...")
-            time.sleep(ENGINE_POLL_INTERVAL_SEC)
+            time.sleep(runtime.engine_poll_interval_sec)
 
         worker.join()
         status_placeholder.empty()
@@ -653,19 +670,19 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
         if preview_text and display_text.startswith(preview_text):
             remaining = display_text[len(preview_text) :]
             streamed = render_chunks_safely(
-                chunk_text_for_stream(remaining),
+                chunk_text_for_stream(remaining, chunk_size=runtime.stream_chunk_size),
                 placeholder=body_placeholder,
                 start_text=preview_text,
-                delay_sec=STREAM_CHUNK_DELAY_SEC,
+                delay_sec=runtime.stream_chunk_delay_sec,
             )
         else:
             final_chunks = display_chunks
             if len(final_chunks) == 1 and final_chunks[0] == display_text:
-                final_chunks = chunk_text_for_stream(display_text)
+                final_chunks = chunk_text_for_stream(display_text, chunk_size=runtime.stream_chunk_size)
             streamed = render_chunks_safely(
                 final_chunks,
                 placeholder=body_placeholder,
-                delay_sec=STREAM_CHUNK_DELAY_SEC,
+                delay_sec=runtime.stream_chunk_delay_sec,
             )
         if streamed.strip():
             display_text = streamed
@@ -690,8 +707,8 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
         }
     )
 
-    runtime.turn_id += 1
-    runtime.trace_id += 1
+    runtime.turn_id += runtime.turn_id_step
+    runtime.trace_id += runtime.trace_id_step
     runtime.causality_chain = E7CausalityChain()
     st.session_state.debug_turn_idx = max(len(runtime.turn_records) - 1, 0)
 

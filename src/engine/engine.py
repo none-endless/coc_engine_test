@@ -12,7 +12,7 @@ from src.agent.llm.merger_agent import MergerAgent
 from src.agent.llm.narrative_agent import NarrativeAgent
 from src.agent.llm.npc_perform_agent import NpcPerformerAgent
 from src.agent.llm.npc_schedul_agent import NpcSchedulerAgent
-from src.agent.llm.service import LLMServiceBase
+from src.agent.llm.service import LLMServiceBase, LLMServiceError
 from src.agent.llm.statechange_agent import StateChangeAgent
 from src.config.loader import ConfigLoader
 from src.data.model.agent_input import (
@@ -164,7 +164,32 @@ class Engine:
         self._narrative_recent_limit = int(self.config.agent.narrative.recent_turns)
         self._npc_memory_turn_limit = int(self.config.agent.npc.memory_turns)
         self._npc_shortlog_turn_limit = int(self.config.agent.npc.shortlog_turns)
-        self._description_add_interval = max(1, int(self.config.description.add_interval))
+        self._consistency_enabled = bool(self.config.consistency.enabled)
+        # 兼容旧配置键：description.add_interval / description.merge_threshold / agent.npc.shortlog_merge_threshold。
+        legacy_trigger_interval = max(1, int(self.config.description.add_interval))
+        configured_trigger_interval = max(1, int(self.config.consistency.trigger_interval_turns))
+        self._consistency_trigger_interval = (
+            legacy_trigger_interval
+            if configured_trigger_interval == 10 and legacy_trigger_interval != 10
+            else configured_trigger_interval
+        )
+
+        legacy_description_threshold = max(0, int(self.config.description.merge_threshold))
+        configured_description_threshold = max(0, int(self.config.consistency.description_add_threshold))
+        self._consistency_description_threshold = (
+            legacy_description_threshold
+            if configured_description_threshold == 3 and legacy_description_threshold != 3
+            else configured_description_threshold
+        )
+
+        legacy_shortlog_threshold = max(0, int(self.config.agent.npc.shortlog_merge_threshold))
+        configured_shortlog_threshold = max(0, int(self.config.consistency.shortlog_threshold))
+        self._consistency_shortlog_threshold = (
+            legacy_shortlog_threshold
+            if configured_shortlog_threshold == 5 and legacy_shortlog_threshold != 5
+            else configured_shortlog_threshold
+        )
+        self._consistency_min_narration_candidates = max(1, int(self.config.consistency.min_narration_candidates))
         self._recent_change_logs: List[ConsistencyRecentChangeLog] = []
         self._consistency_blocking_message: Optional[str] = None
         self._restore_narrative_info_from_storage()
@@ -271,8 +296,8 @@ class Engine:
     def _build_consistency_input(self, *, turn_id: int, trace_id: int) -> Optional[ConsistencyAgentInput]:
         """构建一致性维护输入：系统自动收集 narration/description/key_facts 三类候选。"""
         snapshot = self.world_state.get_snapshot()
-        description_threshold = int(self.config.description.merge_threshold)
-        shortlog_threshold = int(self.config.agent.npc.shortlog_merge_threshold)
+        description_threshold = self._consistency_description_threshold
+        shortlog_threshold = self._consistency_shortlog_threshold
 
         description_candidates: List[ConsistencyDescriptionCandidate] = []
         for bucket in ("maps", "characters", "items"):
@@ -319,17 +344,20 @@ class Engine:
             if content:
                 narration_candidates.append(ConsistencyNarrationCandidate(turn=entry.turn, content=content))
         if not narration_candidates:
+            recent_changes_window = max(1, int(self.config.consistency.narration_fallback_recent_changes))
             fallback_narration = "；".join(
                 self._normalize_consistency_text(item.summary)
-                for item in self._recent_change_logs[-3:]
+                for item in self._recent_change_logs[-recent_changes_window:]
                 if self._normalize_consistency_text(item.summary)
             )
             if fallback_narration:
                 narration_candidates.append(ConsistencyNarrationCandidate(turn=turn_id, content=fallback_narration))
 
+        consistency_config_json = self.config.model_dump(mode="json") if self.config.consistency.include_full_config_json else {}
+
         has_description_candidate = bool(description_candidates)
         has_key_facts_candidate = bool(key_facts_candidates)
-        has_narrative_candidate = len(narration_candidates) > 1
+        has_narrative_candidate = len(narration_candidates) >= self._consistency_min_narration_candidates
         if not has_description_candidate and not has_key_facts_candidate and not has_narrative_candidate:
             return None
 
@@ -340,6 +368,7 @@ class Engine:
                 description_candidates=description_candidates,
                 key_facts_candidates=key_facts_candidates,
                 recent_change_logs=[item.model_copy(deep=True) for item in self._recent_change_logs],
+                config_json=consistency_config_json,
             ),
             system_input=ConsistencyAgentSystemInput(
                 execution=SystemExecutionMeta(
@@ -360,7 +389,9 @@ class Engine:
 
     async def _run_consistency_cycle(self, *, turn_id: int, trace_id: int) -> Optional[Dict[str, Any]]:
         """执行一致性维护回合：调用 LLM 压缩文本并由系统自动写回与清空缓冲。"""
-        if turn_id % self._description_add_interval != 0:
+        if not self._consistency_enabled:
+            return None
+        if turn_id % self._consistency_trigger_interval != 0:
             return None
 
         agent_input = self._build_consistency_input(turn_id=turn_id, trace_id=trace_id)
@@ -382,13 +413,25 @@ class Engine:
         final_output: Optional[ConsistencyAgentOutput] = None
 
         for retry_seq in range(max_retry + 1):
-            output = await asyncio.to_thread(
-                self.consistency_agent.run,
-                agent_input=agent_input,
-                retry_seq=retry_seq,
-                patch_id=f"consistency-{turn_id}-{trace_id}-{retry_seq}",
-                validation_feedback=validation_feedback,
-            )
+            try:
+                output = await asyncio.to_thread(
+                    self.consistency_agent.run,
+                    agent_input=agent_input,
+                    retry_seq=retry_seq,
+                    patch_id=f"consistency-{turn_id}-{trace_id}-{retry_seq}",
+                    validation_feedback=validation_feedback,
+                )
+            except LLMServiceError as exc:
+                message = f"一致性维护服务不可用: {str(exc)}"
+                validation_feedback = {"message": message}
+                error_history.append(
+                    {
+                        "message": message,
+                        "retry_seq": retry_seq,
+                        "error_type": "llm_service_error",
+                    }
+                )
+                continue
             final_output = output
 
             if not output.llm_output.can_proceed:
@@ -431,7 +474,7 @@ class Engine:
         return {
             "triggered": True,
             "ok": False,
-            "blocked": False,
+            "blocked": True,
             "retry_count": max_retry,
             "patch": final_output.model_dump(mode="json") if final_output is not None else None,
             "maintenance": None,
@@ -1112,7 +1155,11 @@ class Engine:
         consistency_payload = None
         if fallback_error is None:
             consistency_payload = await self._run_consistency_cycle(turn_id=turn_id, trace_id=trace_id)
-            if consistency_payload is not None and consistency_payload.get("blocked"):
+            if (
+                consistency_payload is not None
+                and consistency_payload.get("blocked")
+                and self.config.consistency.block_on_failure
+            ):
                 fallback_error = {
                     "code": "CONSISTENCY_BLOCKED",
                     "message": consistency_payload.get("system_message") or self.config.system.fallback_error,
@@ -1189,8 +1236,14 @@ class Engine:
             participant_ids = dm_result.intent_info.against_char_id or []
             if len(participant_ids) < 2:
                 raise ValueError("against routing without enough participant ids")
+            if participant_ids[0] != actor_id:
+                raise ValueError("against routing requires actor id as first participant")
 
             target_id = participant_ids[1]
+            if target_id == actor_id:
+                raise ValueError("against routing requires a target different from actor")
+            if target_id not in self.world_state.get_snapshot().get("characters", {}):
+                raise ValueError(f"target character not found: {target_id}")
             target = self.world_state.get_character(target_id)
             target_attr = target.attributes.get(attr_name)
             if target_attr is None:
@@ -1310,6 +1363,11 @@ class Engine:
         started_at = datetime.now(timezone.utc).isoformat()
 
         for npc_id in scheduled_npc_ids:
+            npc_character = self.world_state.get_character(npc_id)
+            valid_character_refs = [
+                AvailableCharacterRef(id=char_id, name=self.world_state.get_character(char_id).name)
+                for char_id in sorted(self.world_state.get_snapshot().get("characters", {}).keys())
+            ]
             npc_input = NpcPerformerAgentInput(
                 identity=AgentIdentity(id="npcperformer", skill="execute npc behavior"),
                 llm_input=NpcPerformerAgentLlmInput(
@@ -1322,7 +1380,12 @@ class Engine:
                         source_id=source_actor_id,
                     ),
                     world_info=self.world_provider.get_npc_view(npc_id),
-                    agent_memory=self.world_state.get_character(npc_id).memory,
+                    agent_memory=npc_character.memory,
+                    available_attributes=[
+                        AvailableAttributeRef(id=attr_id, name=attr.name)
+                        for attr_id, attr in npc_character.attributes.items()
+                    ],
+                    valid_characters=valid_character_refs,
                 ),
                 system_input=NpcPerformerAgentSystemInput(
                     chain_raw=NpcPerformerAgentChainInput(
@@ -1406,7 +1469,7 @@ class Engine:
 
         try:
             check_result = self._run_npc_check(actor_id=npc_id, performer_output=performer_output)
-        except ValueError as exc:
+        except (ValueError, KeyError) as exc:
             check_error = str(exc)
 
         e3_result = E3RuleResult(
@@ -1589,9 +1652,15 @@ class Engine:
 
         if intent_info.routing_hint == "against":
             participant_ids = intent_info.against_char_id or []
-            target_id = next((char_id for char_id in participant_ids if char_id != actor_id), None)
-            if target_id is None:
+            if len(participant_ids) < 2:
+                raise ValueError("npc against routing requires at least 2 character ids")
+            if participant_ids[0] != actor_id:
+                raise ValueError("npc against routing requires actor id as first participant")
+            target_id = participant_ids[1]
+            if target_id == actor_id:
                 raise ValueError("npc against routing requires target id")
+            if target_id not in self.world_state.get_snapshot().get("characters", {}):
+                raise ValueError(f"npc against target not found: {target_id}")
             target = self.world_state.get_character(target_id)
             target_attr = target.attributes.get(attr_name)
             if target_attr is None:
@@ -1751,12 +1820,45 @@ class Engine:
             )
             current_input.system_input.execution.world_version = int(checkpoint["version"])
 
-            output: StateAgentOutput = await asyncio.to_thread(
-                self.state_agent.run,
-                agent_input=current_input,
-                retry_seq=retry_seq,
-                patch_id=f"patch-{current_input.system_input.execution.turn_id}-{current_input.system_input.execution.trace_id}-{retry_seq}",
-            )
+            output: Optional[StateAgentOutput] = None
+            try:
+                output = await asyncio.to_thread(
+                    self.state_agent.run,
+                    agent_input=current_input,
+                    retry_seq=retry_seq,
+                    patch_id=f"patch-{current_input.system_input.execution.turn_id}-{current_input.system_input.execution.trace_id}-{retry_seq}",
+                )
+            except LLMServiceError as exc:
+                last_feedback = StateErrorFeedback(
+                    message=str(exc),
+                    details={"error_type": "llm_service_error"},
+                    fix_hint="状态变更服务暂不可用，请稍后重试。",
+                )
+                last_error = FallbackError(
+                    code="STATE_AGENT_UNAVAILABLE",
+                    message=str(exc),
+                    retry_count=retry_seq + 1,
+                    retriable=(retry_seq < max_retry),
+                    rollback_applied=False,
+                    degraded_output=None,
+                    details={"phase": "state_agent"},
+                )
+                error_history.append(last_error.model_dump(mode="json"))
+                self._record_io(
+                    kind="agent_io",
+                    agent_name="state_change",
+                    input_data=current_input,
+                    output_data=None,
+                    extra={
+                        "branch": "state",
+                        "turn_id": current_input.system_input.execution.turn_id,
+                        "trace_id": current_input.system_input.execution.trace_id,
+                        "retry_seq": retry_seq,
+                        "apply_status": "llm_unavailable",
+                        "error": str(exc),
+                    },
+                )
+                continue
 
             try:
                 async with self._state_commit_lock:

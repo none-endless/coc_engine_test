@@ -8,7 +8,9 @@ Agent 链路输入模型。
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from ..infra import TurnEnvelope
 
 
 
@@ -26,17 +28,6 @@ class InputSource(str, Enum):
     PLAYER = "player"
     NPC = "npc"
     SYSTEM = "system"
-
-
-class TurnEnvelope(BaseModel):
-    """回合事务封装。"""
-
-    raw_input: str = Field(default="", description="原始输入文本")
-    turn: int = Field(default=0, description="回合号")
-    trace_id: int = Field(default=0, description="链路追踪 ID")
-    debug: Dict[str, Any] = Field(default_factory=dict, description="调试信息")
-    world_version: Optional[int] = Field(default=None, description="世界版本号")
-    event_id: Optional[str] = Field(default=None, description="事件 ID")
 
 
 class E1InputInfo(BaseModel):
@@ -58,10 +49,19 @@ class E2IntentInfo(BaseModel):
 
     intent: str = Field(default="", description="主意图")
     routing_hint: Optional[str] = Field(default=None, description="链路路由建议")
-    attributes: List[Optional[str]] = Field(default=None, description="需要进行鉴定的属性名称")
-    against_char_id: List[Optional[str]] = Field(default=None, description="对抗鉴定对象角色 id 列表")
+    attributes: List[str] = Field(default_factory=list, description="需要进行鉴定的属性名称")
+    against_char_id: List[str] = Field(default_factory=list, description="对抗鉴定对象角色 id 列表")
     difficulty: Optional[str] = Field(default=None, description="鉴定难度")
     dm_reply: Optional[str] = Field(default=None, description="若应由 DM 直接回复，则填回文本")
+
+    @field_validator("attributes", "against_char_id", mode="before")
+    @classmethod
+    def _normalize_optional_list(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value if item is not None and str(item).strip()]
+        return value
 
 
 class E3RuleResult(BaseModel):

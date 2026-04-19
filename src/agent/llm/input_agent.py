@@ -59,6 +59,7 @@ class DMAgent:
 
 			errors = self._validate_semantics(
 				llm_output=llm_output,
+				actor_id=agent_input.llm_input.e1.source_id,
 				available_attributes=available_attributes,
 				valid_character_ids=valid_character_ids,
 				attribute_name_to_id=attr_name_to_id,
@@ -104,6 +105,7 @@ class DMAgent:
 	def _validate_semantics(
 		*,
 		llm_output: DmAgentLlmOutput,
+		actor_id: str,
 		available_attributes: List[str],
 		valid_character_ids: Set[str],
 		attribute_name_to_id: Optional[Dict[str, str]] = None,
@@ -150,8 +152,15 @@ class DMAgent:
 
 		if not ids:
 			errors.append("against routing requires against_char_id")
-		elif len(ids) < 2:
-			errors.append("against routing requires at least 2 character ids")
+		else:
+			if len(ids) < 2:
+				errors.append("against routing requires at least 2 character ids")
+			if len(set(ids)) != len(ids):
+				errors.append("against routing contains duplicate character ids")
+			if actor_id and actor_id not in ids:
+				errors.append("against routing must include actor id")
+			if actor_id and ids and ids[0] != actor_id:
+				errors.append("against routing requires actor id as first against_char_id")
 
 		return errors
 
