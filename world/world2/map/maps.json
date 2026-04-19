@@ -1,0 +1,87 @@
+{
+  "maps": {
+    "map-cell-0001": {
+      "id": "map-cell-0001",
+      "name": "囚室",
+      "description": {
+        "public": [
+          "一间被金属门封住的狭小囚室，墙壁上还留着旧血痕。",
+          "角落里放着一盘录音带，门外能听见走廊里隐约的脚步声。"
+        ],
+        "hint": "这里是起点。先确认规则，再决定是合作、对抗，还是伺机逃走。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "map-hall-0002",
+          "name": "铁门",
+          "direction": "east",
+          "description": "通往试炼走廊的铁门",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {
+        "story.phase": "start"
+      }
+    },
+    "map-hall-0002": {
+      "id": "map-hall-0002",
+      "name": "试炼走廊",
+      "description": {
+        "public": [
+          "这是一条狭长的走廊，顶灯时明时灭。",
+          "墙上挂着一只倒计时屏幕，通往控制室的门锁得很死。"
+        ],
+        "hint": "这里既是争斗点，也是找到钥匙的关键区域。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "map-cell-0001",
+          "name": "囚室门",
+          "direction": "west",
+          "description": "返回囚室",
+          "is_locked": false,
+          "condition": null
+        },
+        {
+          "id": "map-control-0003",
+          "name": "控制室门",
+          "direction": "north",
+          "description": "一扇需要钥匙开启的厚重铁门",
+          "is_locked": true,
+          "condition": "item-key-0002.location == char-player-0000"
+        }
+      ],
+      "extensions": {
+        "story.phase": "choice"
+      }
+    },
+    "map-control-0003": {
+      "id": "map-control-0003",
+      "name": "控制室",
+      "description": {
+        "public": [
+          "控制室里有一块布满划痕的玻璃窗和一台老旧控制台。",
+          "出口门就在控制台后方，但只有在掌握钥匙和足够信任时才适合冲出去。"
+        ],
+        "hint": "这里对应多种结局：合作离开、独自逃脱，或者在血战后夺门而出。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "map-hall-0002",
+          "name": "走廊门",
+          "direction": "south",
+          "description": "返回试炼走廊",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {
+        "story.phase": "end"
+      }
+    }
+  }
+}

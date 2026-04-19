@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.config.constants import DEFAULT_DEXTERITY_ATTRIBUTE_KEYS
 
@@ -18,6 +18,13 @@ class LlmConfig(BaseModel):
     max_tokens: int = Field(default=2000)
     timeout: int = Field(default=30)
     api_base: str = Field(default="https://api.openai.com/v1")
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _normalize_api_key(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return value
 
 
 class SystemConfig(BaseModel):

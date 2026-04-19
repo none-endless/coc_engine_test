@@ -1,0 +1,308 @@
+{
+  "characters": {
+    "char-player-0000": {
+      "id": "char-player-0000",
+      "name": "玩家",
+      "basic_info": "被卷入竖锯试炼的幸存者，需要在合作与背叛之间做出选择。",
+      "location": "map-cell-0001",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 55,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "fight": {
+          "id": "fight",
+          "name": "格斗",
+          "value": 58,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "近身对抗与压制能力"
+        },
+        "investigation": {
+          "id": "investigation",
+          "name": "调查",
+          "value": 62,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "发现线索与解谜能力"
+        },
+        "stealth": {
+          "id": "stealth",
+          "name": "潜行",
+          "value": 52,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "隐蔽行动能力"
+        }
+      },
+      "status": {
+        "health": {
+          "id": "health",
+          "name": "生命",
+          "value": 12,
+          "max_value": 12,
+          "min_value": 0,
+          "description": "生命值"
+        },
+        "trust": {
+          "id": "trust",
+          "name": "信任",
+          "value": 30,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "对他人的信任程度"
+        },
+        "fear": {
+          "id": "fear",
+          "name": "恐惧",
+          "value": 40,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "当前恐惧值"
+        },
+        "resolve": {
+          "id": "resolve",
+          "name": "决心",
+          "value": 60,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "坚持逃生的意志"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    },
+    "char-ally-0001": {
+      "id": "char-ally-0001",
+      "name": "旧同伴",
+      "basic_info": "愿意与玩家合作的旧同伴，但也会在极端压力下动摇。",
+      "location": "map-cell-0001",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 48,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "fight": {
+          "id": "fight",
+          "name": "格斗",
+          "value": 42,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "近身对抗与压制能力"
+        },
+        "investigation": {
+          "id": "investigation",
+          "name": "调查",
+          "value": 68,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "发现线索与解谜能力"
+        },
+        "stealth": {
+          "id": "stealth",
+          "name": "潜行",
+          "value": 46,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "隐蔽行动能力"
+        }
+      },
+      "status": {
+        "health": {
+          "id": "health",
+          "name": "生命",
+          "value": 10,
+          "max_value": 10,
+          "min_value": 0,
+          "description": "生命值"
+        },
+        "trust": {
+          "id": "trust",
+          "name": "信任",
+          "value": 68,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "对他人的信任程度"
+        },
+        "fear": {
+          "id": "fear",
+          "name": "恐惧",
+          "value": 35,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "当前恐惧值"
+        },
+        "resolve": {
+          "id": "resolve",
+          "name": "决心",
+          "value": 55,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "坚持逃生的意志"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    },
+    "char-brawler-0002": {
+      "id": "char-brawler-0002",
+      "name": "暴徒",
+      "basic_info": "相信只有抢夺和压制才能活下去的暴力型幸存者。",
+      "location": "map-hall-0002",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 60,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "fight": {
+          "id": "fight",
+          "name": "格斗",
+          "value": 74,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "近身对抗与压制能力"
+        },
+        "investigation": {
+          "id": "investigation",
+          "name": "调查",
+          "value": 30,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "发现线索与解谜能力"
+        },
+        "stealth": {
+          "id": "stealth",
+          "name": "潜行",
+          "value": 28,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "隐蔽行动能力"
+        }
+      },
+      "status": {
+        "health": {
+          "id": "health",
+          "name": "生命",
+          "value": 14,
+          "max_value": 14,
+          "min_value": 0,
+          "description": "生命值"
+        },
+        "trust": {
+          "id": "trust",
+          "name": "信任",
+          "value": 8,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "对他人的信任程度"
+        },
+        "fear": {
+          "id": "fear",
+          "name": "恐惧",
+          "value": 20,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "当前恐惧值"
+        },
+        "resolve": {
+          "id": "resolve",
+          "name": "决心",
+          "value": 70,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "坚持逃生的意志"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    },
+    "char-observer-0003": {
+      "id": "char-observer-0003",
+      "name": "沉默者",
+      "basic_info": "冷静、克制、始终旁观局势的人，往往知道更多信息。",
+      "location": "map-control-0003",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 50,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "fight": {
+          "id": "fight",
+          "name": "格斗",
+          "value": 36,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "近身对抗与压制能力"
+        },
+        "investigation": {
+          "id": "investigation",
+          "name": "调查",
+          "value": 72,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "发现线索与解谜能力"
+        },
+        "stealth": {
+          "id": "stealth",
+          "name": "潜行",
+          "value": 62,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "隐蔽行动能力"
+        }
+      },
+      "status": {
+        "health": {
+          "id": "health",
+          "name": "生命",
+          "value": 9,
+          "max_value": 9,
+          "min_value": 0,
+          "description": "生命值"
+        },
+        "trust": {
+          "id": "trust",
+          "name": "信任",
+          "value": 45,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "对他人的信任程度"
+        },
+        "fear": {
+          "id": "fear",
+          "name": "恐惧",
+          "value": 58,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "当前恐惧值"
+        },
+        "resolve": {
+          "id": "resolve",
+          "name": "决心",
+          "value": 52,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "坚持逃生的意志"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    }
+  }
+}

@@ -37,6 +37,8 @@ class AppRuntime:
     engine: Engine
     world_name: str
     world_dir: Path
+    turn_limit: Optional[int]
+    turn_limit_text: Optional[str]
     actor_id: str
     turn_id: int
     trace_id: int
@@ -291,6 +293,7 @@ def read_world_preview(world_path: str) -> Dict[str, Any]:
         "scene_name": bundle.scene_name,
         "default_actor_id": bundle.actor_id,
         "turn_start": bundle.turn_start,
+        "turn_limit": bundle.turn_limit,
         "ending_count": len(bundle.endings),
     }
 
@@ -419,6 +422,8 @@ def build_runtime(
         engine=engine,
         world_name=world_name,
         world_dir=world_dir,
+        turn_limit=bundle.turn_limit,
+        turn_limit_text=bundle.turn_limit_text,
         actor_id=bundle.actor_id,
         turn_id=restored_turn,
         trace_id=max(trace_id_start, trace_id_start + (max(0, restored_turn - 1) * trace_id_step)),
@@ -751,6 +756,24 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
     if runtime.game_over:
         with st.chat_message("assistant"):
             st.warning(runtime.ending_text or "结局已达成，本局已结束。")
+        return
+
+    if runtime.turn_limit is not None and runtime.turn_id > runtime.turn_limit:
+        runtime.game_over = True
+        runtime.ending_text = runtime.turn_limit_text or f"你没有在 {runtime.turn_limit} 个回合内逃出生天，竖锯的机关彻底封死了出口。"
+        with st.chat_message("assistant"):
+            st.success(f"结局达成: {runtime.ending_text}")
+        st.session_state.chat_history.append(
+            {
+                "role": "assistant",
+                "content": f"结局达成: {runtime.ending_text}",
+                "meta": {
+                    "trace_id": runtime.trace_id,
+                    "turn_id": runtime.turn_id,
+                    "route": "turn_limit",
+                },
+            }
+        )
         return
 
     hit_ending = check_endings_at_turn_start(runtime.engine.rule_system, runtime.engine.world_state, runtime.endings)
@@ -1089,6 +1112,8 @@ def render_runtime_banner(runtime: AppRuntime) -> None:
     actor = runtime.engine.world_state.get_character(runtime.actor_id)
     current_map = runtime.engine.world_state.get_map(actor.location)
     st.info(f"当前角色: {actor.name} ({runtime.actor_id}) | 位置: {current_map.name} ({current_map.id})")
+    if runtime.turn_limit is not None:
+        st.caption(f"回合上限: {runtime.turn_limit}")
     if runtime.game_over:
         st.success(f"当前已达成结局: {runtime.ending_text}")
 

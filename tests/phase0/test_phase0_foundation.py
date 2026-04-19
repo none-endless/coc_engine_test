@@ -10,6 +10,19 @@ from src.data.model.world_state import WorldState
 
 
 class TestPhase0Foundation(unittest.TestCase):
+    def test_config_blank_api_key_is_normalized_to_empty_string(self):
+        yaml_text = """
+llm:
+    api_key:
+""".strip()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_file = Path(tmpdir) / "config.yaml"
+            config_file.write_text(yaml_text, encoding="utf-8")
+
+            config = ConfigLoader.load(config_path=str(config_file))
+            self.assertEqual(config.llm.api_key, "")
+
     def test_invalid_entity_id_rejected(self):
         with self.assertRaises(ValueError):
             validate_entity_id("char#bedroom")

@@ -1,0 +1,14 @@
+{
+  "scene_name": "竖锯试炼室",
+  "default_actor_id": "char-player-0000",
+  "turn_start": 1,
+  "turn_limit": 50,
+  "turn_limit_text": "50 回合耗尽，控制室的铁门彻底封死，录音机里只剩下竖锯的最后通告：游戏结束。",
+  "recommended_inputs": [
+    "我检查录音带里的规则",
+    "我和同伴合作寻找钥匙",
+    "我逼问暴徒为什么在这里",
+    "我尝试打开控制室的门",
+    "我想和沉默者结盟"
+  ]
+}

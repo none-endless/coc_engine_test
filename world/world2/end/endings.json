@@ -1,0 +1,24 @@
+{
+  "endings": [
+    {
+      "id": "ending-coop-escape-0001",
+      "condition": "char-player-0000.location == map-control-0003 and char-ally-0001.location == map-control-0003 and item-key-0002.location == char-player-0000 and char-player-0000.status.trust.value >= 40 and char-ally-0001.status.trust.value >= 60",
+      "text": "你和旧同伴在控制室达成了合作，钥匙被稳稳握在手中，最后一扇门也被你们一起推开。"
+    },
+    {
+      "id": "ending-lone-escape-0002",
+      "condition": "char-player-0000.location == map-control-0003 and item-key-0002.location == char-player-0000 and char-brawler-0002.status.health.value <= 0 and char-observer-0003.location != map-control-0003",
+      "text": "你独自拿到了钥匙，踩着暴力与背叛留下的空隙冲出控制室。活下来的只有你自己。"
+    },
+    {
+      "id": "ending-blood-trial-0003",
+      "condition": "char-player-0000.status.health.value > 0 and char-brawler-0002.status.health.value <= 0 and char-observer-0003.status.health.value <= 0",
+      "text": "暴徒和沉默者在血战中倒下，你带着一身伤痕活了下来，试炼被鲜血写成了答案。"
+    },
+    {
+      "id": "ending-failure-0004",
+      "condition": "char-player-0000.status.health.value <= 0",
+      "text": "你没能撑到最后，控制台的灯光慢慢熄灭，竖锯的试炼给了你最冷的结局。"
+    }
+  ]
+}

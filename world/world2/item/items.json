@@ -1,0 +1,46 @@
+{
+  "items": {
+    "item-note-0001": {
+      "id": "item-note-0001",
+      "name": "竖锯录音带",
+      "description": {
+        "public": [
+          "一盘磨损严重的录音带，标签上只写着一句话：先听规则，再决定谁活。"
+        ],
+        "hint": "播放或调查它可引出试炼规则。",
+        "add": []
+      },
+      "location": "map-cell-0001",
+      "is_portable": true,
+      "extensions": {}
+    },
+    "item-key-0002": {
+      "id": "item-key-0002",
+      "name": "铁门钥匙",
+      "description": {
+        "public": [
+          "一把冷冰冰的铁门钥匙，应该能打开控制室门锁。"
+        ],
+        "hint": "它是通往控制室的关键。",
+        "add": []
+      },
+      "location": "map-hall-0002",
+      "is_portable": true,
+      "extensions": {}
+    },
+    "item-cutter-0003": {
+      "id": "item-cutter-0003",
+      "name": "断锯片",
+      "description": {
+        "public": [
+          "一块锋利的断锯片，既能威慑对手，也可能割伤自己。"
+        ],
+        "hint": "适合制造威胁或在绝境中反击。",
+        "add": []
+      },
+      "location": "map-control-0003",
+      "is_portable": true,
+      "extensions": {}
+    }
+  }
+}

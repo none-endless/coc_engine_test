@@ -39,6 +39,8 @@ class WorldBundle:
 	scene_name: str
 	actor_id: str
 	turn_start: int
+	turn_limit: Optional[int]
+	turn_limit_text: Optional[str]
 	maps: Dict[str, Any]
 	characters: Dict[str, Any]
 	items: Dict[str, Any]
@@ -140,6 +142,8 @@ def _load_world_bundle(world_dir: Path) -> WorldBundle:
 		scene_name=str(metadata.get("scene_name", world_dir.name)),
 		actor_id=actor_id,
 		turn_start=int(metadata.get("turn_start", 1)),
+		turn_limit=_parse_optional_int(metadata.get("turn_limit")),
+		turn_limit_text=_parse_optional_text(metadata.get("turn_limit_text")),
 		maps=maps,
 		characters=characters,
 		items=items,
@@ -225,6 +229,29 @@ def _check_endings_at_turn_start(rule_system: RuleSystem, world_state: WorldStat
 		except Exception as exc:
 			raise RuntimeError(f"ending condition evaluation failed: {ending.ending_id} -> {exc}") from exc
 	return None
+
+
+def _check_turn_limit_at_turn_start(turn_id: int, turn_limit: Optional[int]) -> bool:
+	"""当当前回合号已经超过上限时，返回 True。"""
+	return turn_limit is not None and turn_id > turn_limit
+
+
+def _parse_optional_int(value: Any) -> Optional[int]:
+	"""把可能为空的配置项解析成整数。"""
+	if value is None:
+		return None
+	text = str(value).strip()
+	if not text:
+		return None
+	return int(text)
+
+
+def _parse_optional_text(value: Any) -> Optional[str]:
+	"""把可能为空的配置项解析成文本。"""
+	if value is None:
+		return None
+	text = str(value).strip()
+	return text or None
 
 
 def check_endings_at_turn_start(rule_system: RuleSystem, world_state: WorldState, endings: Sequence[EndingRule]) -> Optional[EndingRule]:
@@ -333,6 +360,10 @@ def main() -> int:
 			print("\n=== 结局达成 ===")
 			print(f"id: {ending.ending_id}")
 			print(ending.text)
+			return 0
+		if _check_turn_limit_at_turn_start(turn_id, bundle.turn_limit):
+			print("\n=== 回合耗尽 ===")
+			print(bundle.turn_limit_text or f"你没有在 {bundle.turn_limit} 个回合内逃出生天，竖锯的机关彻底封死了出口。")
 			return 0
 
 		raw_input = input("\n>>> ").strip()
