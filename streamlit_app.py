@@ -43,6 +43,8 @@ class AppRuntime:
     causality_chain: E7CausalityChain
     endings: List[Any]
     io_records: List[Dict[str, Any]]
+    narrative_events: List[Dict[str, Any]]
+    narrative_event_lock: Any
     turn_records: List[Dict[str, Any]]
     log_path: Path
     mode: str
@@ -58,31 +60,193 @@ class AppRuntime:
 
 
 def inject_chat_layout_style() -> None:
-    """固定聊天输入框在底部，并为消息区预留底部空间。"""
+    """注入纸质档案风布局样式，固定输入框并优化聊天可读性。"""
 
     st.markdown(
         """
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=IBM+Plex+Sans+SC:wght@400;500;600&display=swap');
+
+        :root {
+            --paper-bg: #efe2c7;
+            --paper-bg-deep: #e2d2b2;
+            --ink: #2f2418;
+            --ink-soft: #5b4a36;
+            --card: rgba(253, 247, 232, 0.88);
+            --card-border: rgba(101, 74, 45, 0.35);
+            --accent: #845a2f;
+            --accent-soft: rgba(132, 90, 47, 0.14);
+        }
+
+        html, body, [data-testid="stAppViewContainer"] {
+            background:
+                radial-gradient(circle at 10% 10%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 40%),
+                radial-gradient(circle at 90% 15%, rgba(182, 141, 95, 0.25), rgba(182, 141, 95, 0) 30%),
+                repeating-linear-gradient(
+                    -8deg,
+                    rgba(124, 89, 51, 0.04),
+                    rgba(124, 89, 51, 0.04) 2px,
+                    rgba(255, 255, 255, 0.03) 2px,
+                    rgba(255, 255, 255, 0.03) 6px
+                ),
+                linear-gradient(160deg, var(--paper-bg), var(--paper-bg-deep));
+            color: var(--ink);
+        }
+
+        [data-testid="stAppViewContainer"],
+        [data-testid="stAppViewContainer"] div[data-testid="stMarkdownContainer"],
+        [data-testid="stAppViewContainer"] div[data-testid="stMarkdownContainer"] p,
+        [data-testid="stAppViewContainer"] div[data-testid="stMarkdownContainer"] li,
+        [data-testid="stAppViewContainer"] div[data-testid="stMarkdownContainer"] a,
+        [data-testid="stAppViewContainer"] div[data-testid="stMarkdownContainer"] strong,
+        [data-testid="stAppViewContainer"] div[data-testid="stMarkdownContainer"] em,
+        [data-testid="stAppViewContainer"] div[data-testid="stMarkdownContainer"] code,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
+            font-family: 'IBM Plex Sans SC', 'Microsoft YaHei UI', sans-serif;
+        }
+
+        /*
+         * Root-cause fix:
+         * Do NOT set font-family on generic spans/buttons/inputs.
+         * Streamlit material icons use ligature text (e.g. key_double_arrow_right)
+         * and must keep their dedicated icon font.
+         */
+        [data-testid="stIconMaterial"],
+        [data-testid="stIconMaterial"] *,
+        [data-testid="stExpanderToggleIcon"],
+        [data-testid="stExpanderToggleIcon"] *,
+        [data-baseweb="icon"],
+        [data-baseweb="icon"] *,
+        [class*="material-symbols"],
+        [class*="material-icons"] {
+            font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+            font-weight: normal !important;
+            font-style: normal !important;
+            letter-spacing: normal !important;
+            text-transform: none !important;
+            white-space: nowrap !important;
+            direction: ltr !important;
+            line-height: 1 !important;
+            font-feature-settings: 'liga' !important;
+            -webkit-font-feature-settings: 'liga' !important;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .material-icons,
+        .material-icons-outlined,
+        .material-icons-round,
+        .material-icons-sharp,
+        .material-icons-two-tone,
+        .material-symbols-outlined,
+        .material-symbols-rounded,
+        .material-symbols-sharp,
+        [class*="material-symbols"] {
+            font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons' !important;
+            font-weight: normal;
+            font-style: normal;
+            letter-spacing: normal;
+            text-transform: none;
+            white-space: nowrap;
+            direction: ltr;
+            line-height: 1;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+            font-feature-settings: 'liga';
+        }
+
+        [data-testid="stAppViewContainer"] h1,
+        [data-testid="stAppViewContainer"] h2,
+        [data-testid="stAppViewContainer"] h3 {
+            font-family: 'Noto Serif SC', 'STSong', serif;
+            letter-spacing: 0.02em;
+            color: var(--ink);
+        }
+
+        [data-testid="stSidebar"] {
+            background: rgba(248, 239, 220, 0.88);
+            border-right: 1px solid rgba(90, 68, 46, 0.22);
+        }
+
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+        [data-testid="stSidebar"] label {
+            color: var(--ink-soft);
+        }
+
+        div[data-testid="stChatMessage"] {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            box-shadow: 0 8px 20px rgba(58, 37, 17, 0.08);
+            padding: 0.55rem 0.9rem;
+            margin-bottom: 0.75rem;
+            animation: paperIn 220ms ease-out;
+        }
+
+        div[data-testid="stChatMessage"][aria-label="Chat message from user"] {
+            background: rgba(238, 219, 183, 0.9);
+            border-color: rgba(117, 84, 47, 0.45);
+        }
+
+        div[data-testid="stChatMessage"] p {
+            color: var(--ink);
+            line-height: 1.7;
+        }
+
+        div[data-testid="stExpander"] {
+            border: 1px dashed rgba(117, 84, 47, 0.45);
+            border-radius: 10px;
+            background: rgba(255, 252, 245, 0.6);
+        }
+
         div[data-testid="stChatInput"] {
             position: fixed;
             bottom: 0.8rem;
             left: max(1rem, calc((100vw - 1200px) / 2));
             right: max(1rem, calc((100vw - 1200px) / 2));
             z-index: 999;
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(4px);
-            border-top: 1px solid rgba(49, 51, 63, 0.2);
-            padding-top: 0.4rem;
+            background: rgba(246, 236, 214, 0.96);
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(117, 84, 47, 0.35);
+            border-radius: 12px;
+            box-shadow: 0 8px 18px rgba(80, 54, 29, 0.14);
+            padding: 0.45rem 0.5rem 0.2rem;
         }
+
+        div[data-testid="stChatInput"] textarea {
+            color: var(--ink) !important;
+        }
+
+        div[data-testid="stAlert"] {
+            border-radius: 10px;
+            border: 1px solid rgba(117, 84, 47, 0.3);
+        }
+
         @media (max-width: 768px) {
             div[data-testid="stChatInput"] {
                 left: 0.4rem;
                 right: 0.4rem;
                 bottom: 0.4rem;
             }
+
+            div[data-testid="stChatMessage"] {
+                padding: 0.5rem 0.7rem;
+            }
         }
+
         div[data-testid="stAppViewContainer"] .main {
             padding-bottom: 6rem;
+        }
+
+        @keyframes paperIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         </style>
         """,
@@ -193,6 +357,8 @@ def build_runtime(
     bundle = load_world_bundle(world_dir)
 
     io_bucket: List[Dict[str, Any]] = []
+    narrative_event_bucket: List[Dict[str, Any]] = []
+    narrative_event_lock = threading.Lock()
     file_logger = AgentIoLogger(base_dir=WORLD_DIR / "log")
     combined_logger = CombinedIoLogger(file_logger=file_logger, bucket=io_bucket)
 
@@ -226,6 +392,15 @@ def build_runtime(
     engine.narrative_agent.llm_service = llm_service
     engine.merger_agent.llm_service = llm_service
 
+    if hasattr(engine, "set_narrative_event_listener"):
+        def _stream_bridge(event: Dict[str, Any]) -> None:
+            if not isinstance(event, dict):
+                return
+            with narrative_event_lock:
+                narrative_event_bucket.append(event)
+
+        engine.set_narrative_event_listener(_stream_bridge)
+
     restored_turn = bundle.turn_start
     turn_id_step = max(1, int(config.runtime.turn_id_step))
     trace_id_step = max(1, int(config.runtime.trace_id_step))
@@ -250,6 +425,8 @@ def build_runtime(
         causality_chain=E7CausalityChain(),
         endings=bundle.endings,
         io_records=io_bucket,
+        narrative_events=narrative_event_bucket,
+        narrative_event_lock=narrative_event_lock,
         turn_records=[],
         log_path=file_logger.log_path,
         mode=mode,
@@ -265,36 +442,54 @@ def build_runtime(
     )
 
 
+def collect_narrative_events(runtime: AppRuntime, cursor: int) -> tuple[List[Dict[str, Any]], int]:
+    """Collect newly emitted narrative stream events from the runtime queue."""
+
+    with runtime.narrative_event_lock:
+        queue_size = len(runtime.narrative_events)
+        safe_cursor = min(max(cursor, 0), queue_size)
+        batch = [
+            item.copy() if isinstance(item, dict) else {"event": "", "data": {}}
+            for item in runtime.narrative_events[safe_cursor:queue_size]
+        ]
+    return batch, queue_size
+
+
 def extract_player_visible_output(result: Dict[str, Any]) -> Dict[str, Any]:
-    """从回合结果中提取玩家可见文本与流式分片。"""
+    """从回合结果中提取玩家可见文本、片段聚合与 merger 信息。"""
 
     route = str(result.get("route", ""))
     fallback_error = result.get("fallback_error")
 
     narrative_payload = result.get("narrative", {}) if isinstance(result.get("narrative"), dict) else {}
-    text = extract_player_text(result)
+    aggregated_raw = str(narrative_payload.get("aggregated_raw", "")).strip()
 
-    chunks: List[str] = []
-    for event in narrative_payload.get("stream_events", []):
-        if not isinstance(event, dict):
+    fragments: List[Dict[str, Any]] = []
+    for item in narrative_payload.get("fragments", []):
+        if not isinstance(item, dict):
             continue
-        if event.get("event") != "narrative.delta":
+        content = str(item.get("content", "")).strip()
+        if not content:
             continue
-        data = event.get("data", {})
-        if isinstance(data, dict):
-            content = str(data.get("content", ""))
-            if content:
-                chunks.append(content)
+        fragments.append(
+            {
+                "fragment_id": str(item.get("fragment_id", "")),
+                "source_kind": str(item.get("source_kind", "")),
+                "source_id": str(item.get("source_id", "")),
+                "content": content,
+            }
+        )
 
-    if text and chunks:
-        merged_chunks = "".join(chunks).strip()
-        if merged_chunks != text.strip():
-            chunks = chunk_text_for_stream(text)
+    if not aggregated_raw and fragments:
+        aggregated_raw = "|".join(fragment["content"] for fragment in fragments)
 
+    merger_payload = result.get("merger", {}) if isinstance(result.get("merger"), dict) else {}
+    merger_text = str((merger_payload.get("llm_output") or {}).get("narrative_str", "")).strip()
+
+    text = aggregated_raw or extract_player_text(result)
     if text:
         return {
             "text": text,
-            "chunks": chunks or chunk_text_for_stream(text),
             "title": (
                 "系统回应" if route == "rule_system_meta" else
                 "DM 回复" if route == "dm_direct_reply" else
@@ -302,12 +497,17 @@ def extract_player_visible_output(result: Dict[str, Any]) -> Dict[str, Any]:
                 "系统降级" if isinstance(fallback_error, dict) and bool(fallback_error) else
                 "叙事输出"
             ),
+            "fragments": fragments,
+            "aggregated_raw": aggregated_raw,
+            "merger_text": merger_text,
         }
 
     return {
         "text": "本回合未产出可见文本。",
-        "chunks": ["本回合未产出可见文本。"],
         "title": "空输出",
+        "fragments": [],
+        "aggregated_raw": "",
+        "merger_text": "",
     }
 
 
@@ -538,6 +738,10 @@ def render_chat_history() -> None:
         with st.chat_message(role):
             st.markdown(content)
             if role == "assistant" and meta:
+                merger_text = str(meta.get("merger_text", "")).strip()
+                if merger_text and merger_text != content.strip():
+                    with st.expander("查看 merger 压缩结果", expanded=False):
+                        st.markdown(merger_text)
                 st.caption(f"trace_id={meta.get('trace_id')} | turn_id={meta.get('turn_id')} | route={meta.get('route')}")
 
 
@@ -573,6 +777,8 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
         st.markdown(user_text)
 
     io_start = len(runtime.io_records)
+    with runtime.narrative_event_lock:
+        narrative_cursor = len(runtime.narrative_events)
 
     result_holder: Dict[str, Any] = {"result": None, "error": None}
 
@@ -591,36 +797,89 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
     worker = threading.Thread(target=_run_turn_worker, daemon=True)
     worker.start()
 
-    preview_text = ""
-    with st.chat_message("assistant"):
-        title_placeholder = st.empty()
-        body_placeholder = st.empty()
-        meta_placeholder = st.empty()
-        status_placeholder = st.empty()
-        title_placeholder.caption("系统处理中")
-        status_placeholder.caption("正在处理主链路...")
+    stream_preview_placeholder = st.empty()
+    status_placeholder = st.empty()
+    live_fragments: Dict[str, Dict[str, Any]] = {}
+    live_fragment_order: List[str] = []
 
-        while worker.is_alive():
-            if not preview_text:
-                candidate = extract_narrative_preview_from_io(runtime.io_records, io_start)
-                if candidate:
-                    preview_text = render_chunks_safely(
-                        chunk_text_for_stream(candidate, chunk_size=runtime.stream_chunk_size),
-                        placeholder=body_placeholder,
-                        delay_sec=runtime.stream_chunk_delay_sec,
-                    )
-                    title_placeholder.caption("叙事预览")
-                    status_placeholder.caption("narrative_agent 已返回，后台仍在处理其余分支...")
-            time.sleep(runtime.engine_poll_interval_sec)
+    def apply_narrative_event(event: Dict[str, Any]) -> None:
+        if not isinstance(event, dict):
+            return
+        event_name = str(event.get("event", ""))
+        if not event_name.startswith("narrative.fragment."):
+            return
+        data = event.get("data", {})
+        if not isinstance(data, dict):
+            return
 
-        worker.join()
-        status_placeholder.empty()
+        fragment_id = str(data.get("fragment_id", "")).strip()
+        if not fragment_id:
+            return
+
+        if fragment_id not in live_fragments:
+            live_fragments[fragment_id] = {
+                "source_kind": str(data.get("source_kind", "")),
+                "source_id": str(data.get("source_id", "")),
+                "content": "",
+                "completed": False,
+            }
+            live_fragment_order.append(fragment_id)
+
+        if event_name == "narrative.fragment.delta":
+            live_fragments[fragment_id]["content"] += str(data.get("delta", ""))
+        elif event_name == "narrative.fragment.completed":
+            completed_text = str(data.get("content", "")).strip()
+            if completed_text:
+                live_fragments[fragment_id]["content"] = completed_text
+            live_fragments[fragment_id]["completed"] = True
+
+    def render_live_fragments() -> None:
+        with stream_preview_placeholder.container():
+            for fragment_id in live_fragment_order:
+                fragment = live_fragments.get(fragment_id, {})
+                source_kind = str(fragment.get("source_kind", ""))
+                source_id = str(fragment.get("source_id", ""))
+                content = str(fragment.get("content", ""))
+                completed = bool(fragment.get("completed", False))
+
+                if source_kind == "player":
+                    title = "玩家叙事"
+                elif source_kind == "npc":
+                    title = f"NPC {source_id} 叙事"
+                else:
+                    title = "叙事片段"
+
+                with st.chat_message("assistant"):
+                    st.caption(f"{title} · {'已完成' if completed else '流式生成中'}")
+                    st.markdown(content or "...")
+
+    while worker.is_alive():
+        new_events, narrative_cursor = collect_narrative_events(runtime, narrative_cursor)
+        for event in new_events:
+            apply_narrative_event(event)
+
+        if live_fragment_order:
+            render_live_fragments()
+            status_placeholder.caption("narrative_agent 流式输出中...")
+        else:
+            status_placeholder.caption("正在处理主链路...")
+
+        time.sleep(runtime.engine_poll_interval_sec)
+
+    worker.join()
+    trailing_events, narrative_cursor = collect_narrative_events(runtime, narrative_cursor)
+    for event in trailing_events:
+        apply_narrative_event(event)
+    if live_fragment_order:
+        render_live_fragments()
+    status_placeholder.empty()
 
     if result_holder.get("error") is not None:
         exc = result_holder["error"]
         error_text = f"回合执行失败: {exc}"
-        title_placeholder.caption("系统错误")
-        body_placeholder.error(error_text)
+        stream_preview_placeholder.empty()
+        with st.chat_message("assistant"):
+            st.error(error_text)
         st.session_state.chat_history.append(
             {
                 "role": "assistant",
@@ -663,37 +922,22 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
 
     visible = extract_player_visible_output(result)
     display_text = str(visible.get("text", ""))
-    display_chunks = list(visible.get("chunks", []))
+    merger_text = str(visible.get("merger_text", "")).strip()
+    fragments = visible.get("fragments", []) if isinstance(visible.get("fragments"), list) else []
+    aggregated_raw = str(visible.get("aggregated_raw", "")).strip()
 
-    title_placeholder.caption(str(visible.get("title", "系统输出")))
-    if display_chunks:
-        if preview_text and display_text.startswith(preview_text):
-            remaining = display_text[len(preview_text) :]
-            streamed = render_chunks_safely(
-                chunk_text_for_stream(remaining, chunk_size=runtime.stream_chunk_size),
-                placeholder=body_placeholder,
-                start_text=preview_text,
-                delay_sec=runtime.stream_chunk_delay_sec,
-            )
-        else:
-            final_chunks = display_chunks
-            if len(final_chunks) == 1 and final_chunks[0] == display_text:
-                final_chunks = chunk_text_for_stream(display_text, chunk_size=runtime.stream_chunk_size)
-            streamed = render_chunks_safely(
-                final_chunks,
-                placeholder=body_placeholder,
-                delay_sec=runtime.stream_chunk_delay_sec,
-            )
-        if streamed.strip():
-            display_text = streamed
-    else:
-        body_placeholder.markdown(display_text)
-
-    meta_placeholder.caption(
-        f"trace_id={turn_record.get('trace_id')} | "
-        f"turn_id={turn_record.get('turn_id')} | "
-        f"route={turn_record.get('route')}"
-    )
+    stream_preview_placeholder.empty()
+    with st.chat_message("assistant"):
+        st.caption(str(visible.get("title", "系统输出")))
+        st.markdown(display_text)
+        if merger_text and merger_text != display_text.strip():
+            with st.expander("查看 merger 压缩结果", expanded=False):
+                st.markdown(merger_text)
+        st.caption(
+            f"trace_id={turn_record.get('trace_id')} | "
+            f"turn_id={turn_record.get('turn_id')} | "
+            f"route={turn_record.get('route')}"
+        )
 
     st.session_state.chat_history.append(
         {
@@ -703,6 +947,9 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
                 "trace_id": turn_record.get("trace_id"),
                 "turn_id": turn_record.get("turn_id"),
                 "route": turn_record.get("route"),
+                "merger_text": merger_text,
+                "aggregated_raw": aggregated_raw,
+                "fragments": fragments,
             },
         }
     )

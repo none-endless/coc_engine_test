@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 from src.agent.llm.evolution_agent import EvolutionAgent, EvolutionResult
 from src.agent.llm.input_agent import DMAgent, DmAnalyzeResult
@@ -192,8 +192,23 @@ class Engine:
         self._consistency_min_narration_candidates = max(1, int(self.config.consistency.min_narration_candidates))
         self._recent_change_logs: List[ConsistencyRecentChangeLog] = []
         self._consistency_blocking_message: Optional[str] = None
+        self._narrative_event_listener: Optional[Callable[[Dict[str, Any]], None]] = None
         self._restore_narrative_info_from_storage()
         self._persist_world_snapshot()
+
+    def set_narrative_event_listener(self, listener: Optional[Callable[[Dict[str, Any]], None]]) -> None:
+        """Register a callback to receive realtime narrative stream events."""
+        self._narrative_event_listener = listener
+
+    def _emit_narrative_event(self, event: Dict[str, Any]) -> None:
+        listener = self._narrative_event_listener
+        if not callable(listener):
+            return
+        try:
+            listener(event)
+        except Exception:
+            # Event bridge failures must never break the turn pipeline.
+            return
 
     def _build_world_snapshot_repository(self) -> Optional[SqliteWorldSnapshotRepository]:
         """按配置创建世界真值快照仓储；未配置时返回 None。"""
@@ -1060,9 +1075,16 @@ class Engine:
                     ),
                 ),
             )
-            narrative_task = asyncio.create_task(self._run_narrative_branch(narrative_input, branch_logs))
-            scheduler_out, state_out, narrative_out = await asyncio.gather(scheduler_task, state_task, narrative_task)
-            narrative_stream_events = self.narrative_agent.build_stream_events(narrative_out)
+            narrative_task = asyncio.create_task(
+                self._run_narrative_branch(
+                    narrative_input,
+                    branch_logs,
+                    source_kind="player",
+                    source_id=actor_id,
+                )
+            )
+            scheduler_out, state_out, narrative_pack = await asyncio.gather(scheduler_task, state_task, narrative_task)
+            narrative_out, narrative_stream_events = narrative_pack
             narrative_stream_transport = NarrativeStreamInterface.build_transport_payload(narrative_stream_events)
         else:
             scheduler_out, state_out = await asyncio.gather(scheduler_task, state_task)
@@ -1079,12 +1101,20 @@ class Engine:
                 trace_id=trace_id,
                 world_version=prepared["world_version"],
                 branch_logs=branch_logs,
+                narrative_stream_events=narrative_stream_events,
             )
             npc_visible_narratives = self._collect_npc_visible_narrative_texts(performer_chain)
             merger_chain = self._merge_e7_chains(
                 base_chain=merger_chain,
                 extra_chains=[chain_item.e7 for chain_item in performer_chain],
             )
+
+        narrative_fragments = self._collect_narrative_fragments_from_events(narrative_stream_events)
+        aggregated_raw = self._compose_fragment_aggregate_text(narrative_fragments)
+        if not aggregated_raw and narrative_out is not None:
+            aggregated_raw = str(narrative_out.llm_output.narrative_str or "").strip()
+        if narrative_stream_events:
+            narrative_stream_transport = NarrativeStreamInterface.build_transport_payload(narrative_stream_events)
 
         merger_payload = None
         if narrative_out is None:
@@ -1095,11 +1125,15 @@ class Engine:
                 "system_output": {},
                 "stream_events": [],
                 "stream_transport": {"sse": [], "websocket": []},
+                "fragments": [],
+                "aggregated_raw": "",
             }
         else:
             narrative_payload = narrative_out.model_dump(mode="json")
             narrative_payload["stream_events"] = narrative_stream_events
             narrative_payload["stream_transport"] = narrative_stream_transport
+            narrative_payload["fragments"] = narrative_fragments
+            narrative_payload["aggregated_raw"] = aggregated_raw
         if fallback_error is not None:
             narrative_payload = {
                 "llm_output": {
@@ -1108,10 +1142,15 @@ class Engine:
                 "system_output": narrative_payload.get("system_output", {}),
                 "stream_events": [],
                 "stream_transport": {"sse": [], "websocket": []},
+                "fragments": [],
+                "aggregated_raw": "",
             }
         else:
-            narrative_text = narrative_out.llm_output.narrative_str if narrative_out is not None else ""
-            merger_narrative_input = self._compose_merger_narrative_input(narrative_text, npc_visible_narratives)
+            player_narrative_text = narrative_out.llm_output.narrative_str if narrative_out is not None else ""
+            merger_narrative_input = aggregated_raw or self._compose_merger_narrative_input(
+                player_narrative_text,
+                npc_visible_narratives,
+            )
             llm_payload = narrative_payload.get("llm_output", {})
             if isinstance(llm_payload, dict):
                 llm_payload["narrative_str"] = merger_narrative_input
@@ -1130,10 +1169,10 @@ class Engine:
                 source="merger_agent",
                 max_recent=self._narrative_recent_limit,
             )
-            if narrative_text.strip():
+            if str(player_narrative_text).strip():
                 self._narrative_info.append_log(
                     turn=turn_id,
-                    content=narrative_text,
+                    content=player_narrative_text,
                     source="narrative_agent",
                 )
             for npc_text in npc_visible_narratives:
@@ -1294,6 +1333,53 @@ class Engine:
         return texts
 
     @staticmethod
+    def _collect_narrative_fragments_from_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        ordered_ids: List[str] = []
+        indexed: Dict[str, Dict[str, Any]] = {}
+
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            data = event.get("data", {})
+            if not isinstance(data, dict):
+                continue
+
+            fragment_id = str(data.get("fragment_id", "")).strip()
+            if not fragment_id:
+                continue
+
+            if fragment_id not in indexed:
+                indexed[fragment_id] = {
+                    "fragment_id": fragment_id,
+                    "source_kind": str(data.get("source_kind", "")),
+                    "source_id": str(data.get("source_id", "")),
+                    "turn_id": data.get("turn_id"),
+                    "trace_id": data.get("trace_id"),
+                    "content": "",
+                }
+                ordered_ids.append(fragment_id)
+
+            event_name = str(event.get("event", ""))
+            if event_name == "narrative.fragment.delta":
+                indexed[fragment_id]["content"] += str(data.get("delta", ""))
+            elif event_name == "narrative.fragment.completed":
+                completed_text = str(data.get("content", "")).strip()
+                if completed_text:
+                    indexed[fragment_id]["content"] = completed_text
+
+        fragments: List[Dict[str, Any]] = []
+        for fragment_id in ordered_ids:
+            payload = indexed[fragment_id]
+            if str(payload.get("content", "")).strip():
+                fragments.append(payload)
+        return fragments
+
+    @staticmethod
+    def _compose_fragment_aggregate_text(fragments: List[Dict[str, Any]]) -> str:
+        segments = [str(item.get("content", "")).strip() for item in fragments if str(item.get("content", "")).strip()]
+        return "|".join(segments)
+
+    @staticmethod
     def _compose_merger_narrative_input(base_text: str, npc_visible_narratives: List[str]) -> str:
         segments: List[str] = []
         normalized_base = str(base_text or "").strip()
@@ -1351,6 +1437,7 @@ class Engine:
         trace_id: int,
         world_version: int,
         branch_logs: List[Dict[str, Any]],
+        narrative_stream_events: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[List[NpcPerformerAgentOutput], List[NpcPerformerChainResult]]:
         """执行 NPC performer，并在 state 成功后统一提交 NPC 目标与记忆副作用。"""
         scheduled_npc_ids = scheduler_out.llm_output.step_result.scheduled_npc_ids
@@ -1420,6 +1507,7 @@ class Engine:
                 turn_id,
                 trace_id,
                 world_version,
+                narrative_stream_events,
             )
             downstream_chain.append(chain_result)
             await asyncio.to_thread(
@@ -1461,6 +1549,7 @@ class Engine:
         turn_id: int,
         trace_id: int,
         world_version: int,
+        narrative_stream_events: Optional[List[Dict[str, Any]]] = None,
     ) -> NpcPerformerChainResult:
         """执行 NPC performer 的下游链路，并生成可并回主 e7 的结构化结果。"""
         llm_output = performer_output.llm_output
@@ -1543,7 +1632,14 @@ class Engine:
                     ),
                 ),
             )
-            npc_narrative_out = self.narrative_agent.run(agent_input=npc_narrative_input)
+            npc_narrative_out, npc_stream_events = self.narrative_agent.run_stream(
+                agent_input=npc_narrative_input,
+                source_kind="npc",
+                source_id=npc_id,
+                event_callback=self._emit_narrative_event,
+            )
+            if narrative_stream_events is not None:
+                narrative_stream_events.extend(npc_stream_events)
             npc_narrative_text = str(npc_narrative_out.llm_output.narrative_str or "").strip()
             self._record_io(
                 kind="agent_io",
@@ -1687,10 +1783,19 @@ class Engine:
         self,
         agent_input: NarrativeAgentInput,
         branch_logs: List[Dict[str, Any]],
-    ) -> NarrativeAgentOutput:
+        *,
+        source_kind: str,
+        source_id: str,
+    ) -> Tuple[NarrativeAgentOutput, List[Dict[str, Any]]]:
         started = time.perf_counter()
         started_at = datetime.now(timezone.utc).isoformat()
-        output = await asyncio.to_thread(self.narrative_agent.run, agent_input=agent_input)
+        output, stream_events = await asyncio.to_thread(
+            self.narrative_agent.run_stream,
+            agent_input=agent_input,
+            source_kind=source_kind,
+            source_id=source_id,
+            event_callback=self._emit_narrative_event,
+        )
         ended = time.perf_counter()
         self._record_io(
             kind="agent_io",
@@ -1701,6 +1806,7 @@ class Engine:
                 "branch": "narrative",
                 "turn_id": agent_input.system_input.execution.turn_id,
                 "trace_id": agent_input.system_input.execution.trace_id,
+                "stream_event_count": len(stream_events),
                 "duration_ms": round((ended - started) * 1000, 3),
             },
         )
@@ -1713,7 +1819,7 @@ class Engine:
                 "duration_ms": round((ended - started) * 1000, 3),
             }
         )
-        return output
+        return output, stream_events
 
     async def _run_merger_branch(
         self,

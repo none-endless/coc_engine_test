@@ -137,7 +137,7 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
         )
 
     def test_merger_commits_compact_narrative_into_recent_pool(self):
-        engine = Engine(world_state=self.world, mode="phase3", llm_service=self._build_service())
+        engine = Engine(world_state=self.world, mode="phase3", llm_service=self._build_service(), enable_persistence=True)
         result = engine.run_turn(
             raw_input="我走向走廊",
             actor_id="char-player-0000",
@@ -146,6 +146,9 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
         )
 
         self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "他推门走出房间，走廊里的冷风立刻扑了上来。")
+        self.assertEqual(result["narrative"]["aggregated_raw"], "他推门走出房间，走廊里的冷风立刻扑了上来。")
+        self.assertTrue(result["narrative"]["fragments"])
+        self.assertEqual(result["narrative"]["fragments"][0]["content"], "他推门走出房间，走廊里的冷风立刻扑了上来。")
         self.assertEqual(result["merger"]["llm_output"]["narrative_str"], "他离开房间，走入了走廊。")
         self.assertEqual(result["narrative_info"]["recent"][-1]["content"], "他离开房间，走入了走廊。")
         self.assertEqual(self.world.get_character("char-player-0000").location, "map-hall-0002")
@@ -194,6 +197,7 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
                     "storage.narrative.sqlite_path": self.narrative_db_path,
                 }
             ),
+            enable_persistence=True,
         )
         result = engine.run_turn(
             raw_input="我在原地等待",
@@ -204,11 +208,13 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
 
         self.assertFalse(result["narrative_triggered"])
         self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "")
+        self.assertEqual(result["narrative"]["aggregated_raw"], "")
+        self.assertEqual(result["narrative"]["fragments"], [])
         self.assertIsNotNone(result["merger"])
         self.assertEqual(result["narrative_info"]["recent"][-1]["content"], "他离开房间，走入了走廊。")
 
     def test_engine_restores_narrative_info_from_independent_sqlite_repository(self):
-        first_engine = Engine(world_state=self.world, mode="phase3", llm_service=self._build_service())
+        first_engine = Engine(world_state=self.world, mode="phase3", llm_service=self._build_service(), enable_persistence=True)
         first_engine.run_turn(
             raw_input="我走向走廊",
             actor_id="char-player-0000",
@@ -216,7 +222,7 @@ class TestPhase4NarrativeMerger(unittest.TestCase):
             trace_id=4004,
         )
 
-        second_engine = Engine(world_state=self.world, mode="phase3", llm_service=self._build_service())
+        second_engine = Engine(world_state=self.world, mode="phase3", llm_service=self._build_service(), enable_persistence=True)
         self.assertTrue(second_engine._narrative_info.recent)
         self.assertEqual(second_engine._narrative_info.recent[-1].content, "他离开房间，走入了走廊。")
 

@@ -203,6 +203,12 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
         self.assertEqual(branches, {"npc_scheduler", "state", "narrative", "merger"})
         self.assertEqual(result["narrative"]["llm_output"]["narrative_str"], "你推门离开房间，走廊里的冷风迎面扑来。")
         self.assertTrue(result["narrative"]["stream_events"])
+        self.assertEqual(result["narrative"]["aggregated_raw"], "你推门离开房间，走廊里的冷风迎面扑来。")
+        self.assertTrue(result["narrative"]["fragments"])
+        self.assertEqual(result["narrative"]["fragments"][0]["content"], "你推门离开房间，走廊里的冷风迎面扑来。")
+        self.assertTrue(
+            any(item.get("event") == "narrative.fragment.delta" for item in result["narrative"]["stream_events"])
+        )
         self.assertEqual(result["merger"]["llm_output"]["narrative_str"], "你离开房间，走入了走廊。")
 
     def test_set_description_public_and_char_index_are_blocked(self):
