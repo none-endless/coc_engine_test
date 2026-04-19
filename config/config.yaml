@@ -1,6 +1,6 @@
 llm:
-  api_key: sk-c8ce7db131914189b362c6a07b4225e8
-  model: qwen3.6-plus
+  api_key: 
+  model: qwen3.6-plus # 推荐
   enable_reasoning: false
   temperature: 0.7
   max_tokens: 5012
