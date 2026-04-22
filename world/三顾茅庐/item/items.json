@@ -1,0 +1,46 @@
+{
+  "items": {
+    "item-visit_card-0001": {
+      "id": "item-visit_card-0001",
+      "name": "竹简名帖",
+      "description": {
+        "public": [
+          "一卷写着刘备来意的竹简名帖，边角被妥帖压平，没有半分轻慢。"
+        ],
+        "hint": "这是入庐陈情最重要的礼数凭据。",
+        "add": []
+      },
+      "location": "map-longzhong_path-0001",
+      "is_portable": true,
+      "extensions": {}
+    },
+    "item-gift_wine-0002": {
+      "id": "item-gift_wine-0002",
+      "name": "温好的礼酒",
+      "description": {
+        "public": [
+          "院中备着一壶温酒，既是敬意，也是访贤时不失体面的心意。"
+        ],
+        "hint": "若一并带入书房，能更体现第三次来访的诚意。",
+        "add": []
+      },
+      "location": "map-thatched_courtyard-0002",
+      "is_portable": true,
+      "extensions": {}
+    },
+    "item-longzhong_map-0003": {
+      "id": "item-longzhong_map-0003",
+      "name": "隆中地势图",
+      "description": {
+        "public": [
+          "案上摊着一幅手绘地势图，山川道路标得极细，显然出自深思熟虑之手。"
+        ],
+        "hint": "它象征着卧龙对天下局势的准备与判断。",
+        "add": []
+      },
+      "location": "map-cottage_study-0003",
+      "is_portable": true,
+      "extensions": {}
+    }
+  }
+}

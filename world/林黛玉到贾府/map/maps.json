@@ -1,0 +1,112 @@
+{
+  "maps": {
+    "map-rong_gate-0001": {
+      "id": "map-rong_gate-0001",
+      "name": "荣国府角门",
+      "description": {
+        "public": [
+          "车马停在荣国府角门外，门前石狮沉静，来往仆妇的脚步都透着规矩。",
+          "林黛玉初到京中，心中既有哀思，也有对这座显赫府邸的陌生与警惕。"
+        ],
+        "hint": "此处适合整理行装、拾起家书，再正式进入贾府。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "conn-rong-gate-to-corridor-0001",
+          "name": "入府门道",
+          "direction": "east",
+          "description": "沿门内甬道可进入抄手游廊。",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {}
+    },
+    "map-corridor-0002": {
+      "id": "map-corridor-0002",
+      "name": "抄手游廊",
+      "description": {
+        "public": [
+          "游廊曲折，花木掩映，几名丫鬟脚步极轻，处处都显出深宅大院的分寸。",
+          "一阵笑语先至，人未露面，先有一股明快而凌厉的气势压了过来。"
+        ],
+        "hint": "这里会遇见王熙凤，也能分流前往贾母上房或碧纱橱外间。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "conn-corridor-to-gate-0002",
+          "name": "退回角门",
+          "direction": "west",
+          "description": "循原路可回到荣国府角门。",
+          "is_locked": false,
+          "condition": null
+        },
+        {
+          "id": "conn-corridor-to-hall-0003",
+          "name": "上房门帘",
+          "direction": "north",
+          "description": "穿过门帘便是贾母上房。",
+          "is_locked": false,
+          "condition": null
+        },
+        {
+          "id": "conn-corridor-to-wing-0004",
+          "name": "碧纱橱侧间",
+          "direction": "east",
+          "description": "向东可去碧纱橱外间，那里正有人等着见新来的表妹。",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {}
+    },
+    "map-grand_hall-0003": {
+      "id": "map-grand_hall-0003",
+      "name": "贾母上房",
+      "description": {
+        "public": [
+          "上房陈设富贵而不失温煦，贾母居中而坐，目光里自有旧日亲情的牵系。",
+          "屋里人虽多，却都在等着看这位来自扬州的新小姐如何落座开口。"
+        ],
+        "hint": "若带着家书前来，此处最容易触发正式的初见结局。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "conn-hall-to-corridor-0005",
+          "name": "回游廊",
+          "direction": "south",
+          "description": "退回抄手游廊。",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {}
+    },
+    "map-west_room-0004": {
+      "id": "map-west_room-0004",
+      "name": "碧纱橱外间",
+      "description": {
+        "public": [
+          "碧纱橱外间陈设清雅，暖香浮动，一位面目清俊的少年正匆匆赶来。",
+          "他胸前所佩通灵玉最先映入眼帘，而这场相见也注定不会只是寻常寒暄。"
+        ],
+        "hint": "若在此与宝玉会面，便会触发更具小说意味的初会结局。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "conn-wing-to-corridor-0006",
+          "name": "回游廊",
+          "direction": "west",
+          "description": "退回抄手游廊。",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {}
+    }
+  }
+}

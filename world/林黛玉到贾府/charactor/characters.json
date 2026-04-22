@@ -1,0 +1,180 @@
+{
+  "characters": {
+    "char-player-0000": {
+      "id": "char-player-0000",
+      "name": "林黛玉",
+      "basic_info": "扬州来京的新客，心思细密，初到贾府时格外敏感而克制。",
+      "location": "map-rong_gate-0001",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 48,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "etiquette": {
+          "id": "etiquette",
+          "name": "礼数",
+          "value": 86,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "在高门大院中进退应对的分寸"
+        },
+        "insight": {
+          "id": "insight",
+          "name": "识人",
+          "value": 88,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "捕捉他人神色与言外之意的能力"
+        },
+        "speech": {
+          "id": "speech",
+          "name": "言辞",
+          "value": 74,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "克制表达心意与回答问话的能力"
+        },
+        "poise": {
+          "id": "poise",
+          "name": "定神",
+          "value": 80,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "在陌生环境中稳住情绪与仪态的能力"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    },
+    "char-wang_xifeng-0001": {
+      "id": "char-wang_xifeng-0001",
+      "name": "王熙凤",
+      "basic_info": "贾府中最善应酬周旋的人物，笑声先到，人心也先被她看透。",
+      "location": "map-corridor-0002",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 62,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "speech": {
+          "id": "speech",
+          "name": "言辞",
+          "value": 93,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "掌控场面与照拂人心的能力"
+        },
+        "insight": {
+          "id": "insight",
+          "name": "识人",
+          "value": 90,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "迅速看穿场合与人心的能力"
+        },
+        "poise": {
+          "id": "poise",
+          "name": "定神",
+          "value": 87,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "在繁杂局面中维持从容的能力"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    },
+    "char-jia_mu-0002": {
+      "id": "char-jia_mu-0002",
+      "name": "贾母",
+      "basic_info": "荣国府的老祖宗，外柔内明，对外孙女既怜惜又审视。",
+      "location": "map-grand_hall-0003",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 30,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "insight": {
+          "id": "insight",
+          "name": "识人",
+          "value": 92,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "看透晚辈心思与家族局势的能力"
+        },
+        "speech": {
+          "id": "speech",
+          "name": "言辞",
+          "value": 82,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "安抚、发问与定局的能力"
+        },
+        "poise": {
+          "id": "poise",
+          "name": "定神",
+          "value": 90,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "维持大家族中心气度的能力"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    },
+    "char-jia_baoyu-0003": {
+      "id": "char-jia_baoyu-0003",
+      "name": "贾宝玉",
+      "basic_info": "贾府少爷，闻得林妹妹到来便急急赶来，最先映入眼帘的是胸前那块通灵玉。",
+      "location": "map-west_room-0004",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 54,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "speech": {
+          "id": "speech",
+          "name": "言辞",
+          "value": 78,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "率性表达好恶与亲近感的能力"
+        },
+        "insight": {
+          "id": "insight",
+          "name": "识人",
+          "value": 75,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "凭直觉辨认亲近与疏离的能力"
+        },
+        "poise": {
+          "id": "poise",
+          "name": "定神",
+          "value": 60,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "在长辈与规矩前勉强稳住心绪的能力"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    }
+  }
+}

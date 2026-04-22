@@ -1,0 +1,19 @@
+{
+  "endings": [
+    {
+      "id": "ending-kongming-out-0001",
+      "condition": "char-player-0000.location == map-cottage_study-0003 and item-visit_card-0001.location == char-player-0000 and item-gift_wine-0002.location == char-player-0000",
+      "text": "刘备执礼入庐，又以言辞和诚意打动诸葛亮。卧龙终于起身相送，三顾之约在这一刻化成了出山辅汉的承诺。"
+    },
+    {
+      "id": "ending-meet-kongming-0002",
+      "condition": "char-player-0000.location == map-cottage_study-0003 and item-visit_card-0001.location == char-player-0000 and item-gift_wine-0002.location != char-player-0000",
+      "text": "刘备终于在书房中见到了诸葛亮。虽仍未立刻谈成出山之约，但卧龙已认真听完了这第三次来访的心意。"
+    },
+    {
+      "id": "ending-empty_return-0003",
+      "condition": "char-player-0000.location == map-cottage_study-0003 and item-visit_card-0001.location != char-player-0000",
+      "text": "你仓促入庐，连最基本的名帖礼数都未准备妥当。诸葛亮没有动怒，只是让这次会面停在了门槛之前。"
+    }
+  ]
+}

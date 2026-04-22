@@ -19,7 +19,7 @@ from src.utils.agent_io_logger import AgentIoLogger
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-DEFAULT_WORLD_DIR = REPO_ROOT / "world" / "world1"
+DEFAULT_WORLD_DIR = REPO_ROOT / "world" / "三顾茅庐"
 DEFAULT_CONFIG_PATH = "config/config.yaml"
 
 
@@ -120,7 +120,7 @@ def _collect_endings(directory: Path) -> List[EndingRule]:
 
 
 def _load_world_bundle(world_dir: Path) -> WorldBundle:
-	"""按 world1 分类目录加载世界：map/charactor/item/end。"""
+	"""按分类目录加载世界：map/charactor/item/end。"""
 	meta_path = world_dir / "world.json"
 	metadata: Dict[str, Any] = _load_json_file(meta_path) if meta_path.exists() else {}
 

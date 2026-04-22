@@ -1,0 +1,19 @@
+{
+  "endings": [
+    {
+      "id": "ending-first_meet_baoyu-0001",
+      "condition": "char-player-0000.location == map-west_room-0004 and item-family_letter-0001.location == char-player-0000 and item-spirit_jade-0003.location == char-jia_baoyu-0003",
+      "text": "你在碧纱橱外间与宝玉初会，那块通灵玉与一句“这个妹妹我曾见过”让贾府的第一天立刻有了宿命意味。"
+    },
+    {
+      "id": "ending-meet_grandmother-0002",
+      "condition": "char-player-0000.location == map-grand_hall-0003 and item-family_letter-0001.location == char-player-0000",
+      "text": "你带着扬州家书拜见贾母，哀思与亲情在上房里一并落定。林黛玉终于真正踏进了贾府的人情脉络。"
+    },
+    {
+      "id": "ending-rushed_entry-0003",
+      "condition": "char-player-0000.location == map-grand_hall-0003 and item-family_letter-0001.location != char-player-0000",
+      "text": "你匆忙入上房，却连最该带在身边的家书也未曾取上。这场初见仍见宽厚，却在礼数上先失了一步。"
+    }
+  ]
+}

@@ -1,0 +1,164 @@
+{
+  "characters": {
+    "char-player-0000": {
+      "id": "char-player-0000",
+      "name": "刘备",
+      "basic_info": "汉室宗亲，胸怀匡扶之志，已是第三次前往隆中拜访诸葛亮。",
+      "location": "map-longzhong_path-0001",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 52,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "speech": {
+          "id": "speech",
+          "name": "言辞",
+          "value": 82,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "陈情、劝说与表达志向的能力"
+        },
+        "insight": {
+          "id": "insight",
+          "name": "识人",
+          "value": 76,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "判断局势与理解他人心意的能力"
+        },
+        "leadership": {
+          "id": "leadership",
+          "name": "统御",
+          "value": 84,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "凝聚人心、统合局面的能力"
+        },
+        "courtesy": {
+          "id": "courtesy",
+          "name": "礼数",
+          "value": 79,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "克制言行、守礼待人的能力"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    },
+    "char-zhuge_liang-0001": {
+      "id": "char-zhuge_liang-0001",
+      "name": "诸葛亮",
+      "basic_info": "隐居隆中的卧龙先生，洞察时势，静待真正能托付天下的人。",
+      "location": "map-cottage_study-0003",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 45,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "knowledge": {
+          "id": "knowledge",
+          "name": "学识",
+          "value": 98,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "经世治国、天文地理与兵法见识"
+        },
+        "insight": {
+          "id": "insight",
+          "name": "识人",
+          "value": 95,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "洞察他人志向与局势变化的能力"
+        },
+        "speech": {
+          "id": "speech",
+          "name": "言辞",
+          "value": 88,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "辨析与陈说天下大势的能力"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    },
+    "char-guanyu-0002": {
+      "id": "char-guanyu-0002",
+      "name": "关羽",
+      "basic_info": "刘备义弟，沉稳持重，对这次拜访依旧保持尊敬与戒备。",
+      "location": "map-thatched_courtyard-0002",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 61,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "fight": {
+          "id": "fight",
+          "name": "格斗",
+          "value": 92,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "近身与武艺压制能力"
+        },
+        "resolve": {
+          "id": "resolve",
+          "name": "定力",
+          "value": 86,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "克制情绪、稳住局面的能力"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    },
+    "char-zhangfei-0003": {
+      "id": "char-zhangfei-0003",
+      "name": "张飞",
+      "basic_info": "刘备义弟，性情刚烈，对一再拜访山野隐士颇有不平。",
+      "location": "map-thatched_courtyard-0002",
+      "attributes": {
+        "dexterity": {
+          "id": "dexterity",
+          "name": "敏捷",
+          "value": 58,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "行动先后顺序的核心属性"
+        },
+        "fight": {
+          "id": "fight",
+          "name": "格斗",
+          "value": 89,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "近身与武艺压制能力"
+        },
+        "intimidation": {
+          "id": "intimidation",
+          "name": "威势",
+          "value": 80,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "用气势压制他人的能力"
+        }
+      },
+      "inventory": {},
+      "extensions": {}
+    }
+  }
+}

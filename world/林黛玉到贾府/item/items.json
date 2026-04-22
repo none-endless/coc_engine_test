@@ -1,0 +1,46 @@
+{
+  "items": {
+    "item-family_letter-0001": {
+      "id": "item-family_letter-0001",
+      "name": "扬州家书",
+      "description": {
+        "public": [
+          "信封封口已经旧了，里面承着母亲遗愿与这一程入京投亲的全部分量。"
+        ],
+        "hint": "带着家书去见贾母，才能让初见更合礼数也更有凭据。",
+        "add": []
+      },
+      "location": "map-rong_gate-0001",
+      "is_portable": true,
+      "extensions": {}
+    },
+    "item-travel_case-0002": {
+      "id": "item-travel_case-0002",
+      "name": "旧绣行箧",
+      "description": {
+        "public": [
+          "一只随身小行箧，装着帕子、香囊与几样贴身旧物，是黛玉一路带来的私人物件。"
+        ],
+        "hint": "它提醒你这里并非故园，而是一处必须谨慎立足的新环境。",
+        "add": []
+      },
+      "location": "char-player-0000",
+      "is_portable": true,
+      "extensions": {}
+    },
+    "item-spirit_jade-0003": {
+      "id": "item-spirit_jade-0003",
+      "name": "通灵宝玉",
+      "description": {
+        "public": [
+          "一块温润生光的宝玉，系在少年胸前，像先声夺人的命定暗示。"
+        ],
+        "hint": "它属于宝玉，也让这场相见带上了小说中最著名的象征意味。",
+        "add": []
+      },
+      "location": "char-jia_baoyu-0003",
+      "is_portable": false,
+      "extensions": {}
+    }
+  }
+}

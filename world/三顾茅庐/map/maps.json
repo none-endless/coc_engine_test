@@ -1,0 +1,81 @@
+{
+  "maps": {
+    "map-longzhong_path-0001": {
+      "id": "map-longzhong_path-0001",
+      "name": "隆中山道",
+      "description": {
+        "public": [
+          "冬末初晴，山道两侧松竹清寒，远处隐约可见草庐屋脊。",
+          "刘备已是第三次入山，脚下尘土不重，心头却比前两次更郑重。"
+        ],
+        "hint": "这里适合整理心绪、确认随身礼物，再前往草庐院前。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "conn-longzhong-to-courtyard-0001",
+          "name": "入庐小径",
+          "direction": "east",
+          "description": "沿着竹影掩映的小径可抵达草庐院前。",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {}
+    },
+    "map-thatched_courtyard-0002": {
+      "id": "map-thatched_courtyard-0002",
+      "name": "草庐院前",
+      "description": {
+        "public": [
+          "院中柴门半掩，石桌与酒壶收拾得极整齐，竹篱外风过有声。",
+          "关羽、张飞暂在院外等候，谁也不敢轻慢这一次会面。"
+        ],
+        "hint": "此处可以拿上礼酒，也可以与同伴交谈后再入书房。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "conn-courtyard-to-path-0002",
+          "name": "回山道",
+          "direction": "west",
+          "description": "沿原路退回隆中山道。",
+          "is_locked": false,
+          "condition": null
+        },
+        {
+          "id": "conn-courtyard-to-study-0003",
+          "name": "柴门",
+          "direction": "north",
+          "description": "推开柴门便可进入诸葛亮起居议事的书房。",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {}
+    },
+    "map-cottage_study-0003": {
+      "id": "map-cottage_study-0003",
+      "name": "草庐书房",
+      "description": {
+        "public": [
+          "书房内琴书并列，案上地图摊开，火盆里的炭火烧得极稳。",
+          "诸葛亮正凭几而坐，像是早已知道来者是谁。"
+        ],
+        "hint": "这里是三顾茅庐的关键场景，礼数与诚意决定能否谈成出山之约。",
+        "add": []
+      },
+      "connections": [
+        {
+          "id": "conn-study-to-courtyard-0004",
+          "name": "退回院前",
+          "direction": "south",
+          "description": "从书房退回草庐院前。",
+          "is_locked": false,
+          "condition": null
+        }
+      ],
+      "extensions": {}
+    }
+  }
+}
