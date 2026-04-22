@@ -1,0 +1,23 @@
+llm:
+    model: gpt-4
+    temperature: 0.5
+    max_tokens: 1800
+    timeout: 25
+    api_base: https://api.openai.com/v1
+system:
+    max_retry_count: 4
+    retry_timeout_ms: 4500
+    fallback_error: custom fallback
+    snapshot_interval: 8
+agent:
+    dm:
+        memory_turns: 6
+    npc:
+        memory_turns: 16
+        shortlog_turns: 31
+        max_actions_per_turn: 4
+        cooldown_turns: 2
+    narrative:
+        recent_turns: 6
+description:
+    add_interval: 12
