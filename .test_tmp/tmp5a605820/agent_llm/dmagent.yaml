@@ -1,0 +1,3 @@
+llm:
+    model: dm-model
+    temperature: 0.2

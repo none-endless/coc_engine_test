@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.agent.llm.service import LLMServiceBase
 from src.config.loader import ConfigLoader
 from src.data.model.base import CharacterEntity, MapEntity, WorldEntityStore
 from src.data.model.entity_id import EntityIdGenerator, EntityIdRegistry, validate_entity_id
@@ -89,6 +90,44 @@ description:
             self.assertEqual(config.system.max_retry_count, 6)
             self.assertEqual(config.agent.npc.max_actions_per_turn, 2)
             self.assertEqual(config.description.add_interval, 12)
+
+    def test_agent_llm_configs_loaded_and_resolved(self):
+        yaml_text = """
+llm:
+    model: global-model
+    temperature: 0.6
+    max_tokens: 1800
+    timeout: 25
+    api_base: https://api.openai.com/v1
+    agent_config_dir: agent_llm
+""".strip()
+
+        dmagent_yaml = """
+llm:
+    model: dm-model
+    temperature: 0.2
+""".strip()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_file = Path(tmpdir) / "config.yaml"
+            config_file.write_text(yaml_text, encoding="utf-8")
+
+            agent_dir = Path(tmpdir) / "agent_llm"
+            agent_dir.mkdir(parents=True, exist_ok=True)
+            (agent_dir / "dmagent.yaml").write_text(dmagent_yaml, encoding="utf-8")
+
+            config = ConfigLoader.load(config_path=str(config_file))
+            self.assertIn("dmagent", config.llm_agent_overrides)
+            self.assertEqual(config.llm_agent_overrides["dmagent"]["model"], "dm-model")
+
+            service = LLMServiceBase(config=config)
+            dm_llm = service._resolve_llm_config(agent_name="dmagent")
+            narrative_llm = service._resolve_llm_config(agent_name="narrative")
+
+            self.assertEqual(dm_llm.model, "dm-model")
+            self.assertEqual(dm_llm.temperature, 0.2)
+            self.assertEqual(narrative_llm.model, "global-model")
+            self.assertEqual(narrative_llm.temperature, 0.6)
 
     def test_world_state_auto_index_and_tamper_safe(self):
         map_1 = MapEntity(id="map-bedroom-0001", name="Bedroom")

@@ -1,0 +1,7 @@
+llm:
+    model: global-model
+    temperature: 0.6
+    max_tokens: 1800
+    timeout: 25
+    api_base: https://api.openai.com/v1
+    agent_config_dir: agent_llm

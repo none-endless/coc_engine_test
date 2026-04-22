@@ -15,12 +15,12 @@ sections:
         label: API Base URL
         type: text
         required: true
-        default: https://api.openai.com/v1
+        default: https://dashscope.aliyuncs.com/compatible-mode/v1
       - path: llm.model
         label: Model Name
         type: text
         required: true
-        default: gpt-4
+        default: qwen3.6-flash
       - path: llm.enable_reasoning
         label: Enable Reasoning
         type: boolean
@@ -47,6 +47,11 @@ sections:
         default: 30
         min: 1
         max: 300
+      - path: llm.agent_config_dir
+        label: Agent LLM Config Dir
+        type: text
+        required: true
+        default: ""
 
   - id: system
     label: 系统执行策略

@@ -12,12 +12,13 @@ from src.config.constants import DEFAULT_DEXTERITY_ATTRIBUTE_KEYS
 
 class LlmConfig(BaseModel):
     api_key: str = Field(default="")
-    model: str = Field(default="gpt-4")
+    model: str = Field(default="qwen3.6-flash")
     enable_reasoning: bool = Field(default=False)
     temperature: float = Field(default=0.7)
     max_tokens: int = Field(default=2000)
     timeout: int = Field(default=30)
-    api_base: str = Field(default="https://api.openai.com/v1")
+    api_base: str = Field(default="https://dashscope.aliyuncs.com/compatible-mode/v1")
+    agent_config_dir: str = Field(default="")
 
     @field_validator("api_key", mode="before")
     @classmethod
@@ -25,6 +26,13 @@ class LlmConfig(BaseModel):
         if value is None:
             return ""
         return value
+
+    @field_validator("agent_config_dir", mode="before")
+    @classmethod
+    def _normalize_agent_config_dir(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value)
 
 
 class SystemConfig(BaseModel):
@@ -103,6 +111,7 @@ class RuntimeConfig(BaseModel):
 
 class EngineConfig(BaseModel):
     llm: LlmConfig = Field(default_factory=LlmConfig)
+    llm_agent_overrides: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     system: SystemConfig = Field(default_factory=SystemConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
@@ -134,6 +143,14 @@ class ConfigLoader:
 
         cli_data = cls._parse_cli_overrides(cli_overrides or {})
         cls._deep_merge(merged, cli_data)
+
+        llm_data = merged.get("llm", {})
+        if not isinstance(llm_data, dict):
+            raise ValueError("llm config root must be an object")
+        merged["llm_agent_overrides"] = cls._load_agent_llm_overrides(
+            config_path=config_path,
+            llm_data=llm_data,
+        )
 
         return EngineConfig.model_validate(merged)
 
@@ -200,6 +217,57 @@ class ConfigLoader:
                 ConfigLoader._deep_merge(base[key], value)
             else:
                 base[key] = value
+
+    @classmethod
+    def _load_agent_llm_overrides(
+        cls,
+        *,
+        config_path: Optional[str],
+        llm_data: Dict[str, Any],
+    ) -> Dict[str, Dict[str, Any]]:
+        raw_dir = str(llm_data.get("agent_config_dir", "")).strip()
+        if not raw_dir:
+            return {}
+
+        directory = cls._resolve_agent_config_dir(config_path=config_path, raw_dir=raw_dir)
+        if not directory.exists() or not directory.is_dir():
+            return {}
+
+        base_llm = dict(llm_data)
+        base_llm.pop("agent_config_dir", None)
+        validated_base = LlmConfig.model_validate({**base_llm, "agent_config_dir": raw_dir}).model_dump(mode="python")
+        validated_base.pop("agent_config_dir", None)
+
+        overrides: Dict[str, Dict[str, Any]] = {}
+        for file_path in sorted(directory.iterdir()):
+            if not file_path.is_file():
+                continue
+            if file_path.suffix.lower() not in {".yaml", ".yml"}:
+                continue
+
+            loaded = cls._load_file(str(file_path))
+            llm_override = loaded.get("llm", loaded)
+            if not isinstance(llm_override, dict):
+                raise ValueError(f"agent llm config must be object: {file_path}")
+
+            merged = dict(validated_base)
+            cls._deep_merge(merged, llm_override)
+            LlmConfig.model_validate({**merged, "agent_config_dir": raw_dir})
+
+            clean_override = dict(llm_override)
+            clean_override.pop("agent_config_dir", None)
+            overrides[file_path.stem] = clean_override
+
+        return overrides
+
+    @staticmethod
+    def _resolve_agent_config_dir(*, config_path: Optional[str], raw_dir: str) -> Path:
+        directory = Path(raw_dir)
+        if directory.is_absolute():
+            return directory
+        if config_path:
+            return Path(config_path).resolve().parent / directory
+        return Path.cwd() / directory
 
     @staticmethod
     def _coerce_value(raw: str) -> Any:

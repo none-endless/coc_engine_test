@@ -10,7 +10,7 @@ from urllib.error import HTTPError, URLError
 
 from pydantic import BaseModel, ValidationError
 
-from src.config.loader import EngineConfig
+from src.config.loader import EngineConfig, LlmConfig
 
 
 TModel = TypeVar("TModel", bound=BaseModel)
@@ -218,7 +218,7 @@ class LLMServiceBase:
         user_payload: Dict[str, Any],
         output_model: Type[TModel],
     ) -> Dict[str, Any]:
-        llm = self.config.llm
+        llm = self._resolve_llm_config(agent_name=agent_name)
         api_key = getattr(llm, "api_key", "")
         if not api_key:
             raise LLMServiceError("llm.api_key is required")
@@ -271,7 +271,7 @@ class LLMServiceBase:
         system_prompt: str,
         user_payload: Dict[str, Any],
     ) -> Iterator[str]:
-        llm = self.config.llm
+        llm = self._resolve_llm_config(agent_name=agent_name)
         api_key = getattr(llm, "api_key", "")
         if not api_key:
             raise LLMServiceError("llm.api_key is required")
@@ -421,6 +421,18 @@ class LLMServiceBase:
                 return str(value.get("text", ""))
 
         return ""
+
+    def _resolve_llm_config(self, *, agent_name: str) -> LlmConfig:
+        base_llm = self.config.llm.model_dump(mode="python")
+        base_llm.pop("agent_config_dir", None)
+
+        override = self.config.llm_agent_overrides.get(agent_name, {})
+        if not isinstance(override, dict):
+            override = {}
+
+        merged = dict(base_llm)
+        merged.update(override)
+        return LlmConfig.model_validate({**merged, "agent_config_dir": self.config.llm.agent_config_dir})
 
     @staticmethod
     def _format_validation_feedback(exc: ValidationError) -> str:

@@ -13,7 +13,7 @@ properties:
       model:
         type: string
         minLength: 1
-        default: gpt-4
+        default: qwen3.6-flash
       enable_reasoning:
         type: boolean
         default: false
@@ -35,8 +35,11 @@ properties:
       api_base:
         type: string
         minLength: 1
-        default: https://api.openai.com/v1
-    required: [api_key, model, enable_reasoning, temperature, max_tokens, timeout, api_base]
+        default: https://dashscope.aliyuncs.com/compatible-mode/v1
+      agent_config_dir:
+        type: string
+        default: ""
+    required: [api_key, model, enable_reasoning, temperature, max_tokens, timeout, api_base, agent_config_dir]
 
   system:
     type: object
