@@ -14,6 +14,7 @@
       "connections": [
         {
           "id": "conn-rong-gate-to-corridor-0001",
+          "target_map_id": "map-corridor-0002",
           "name": "入府门道",
           "direction": "east",
           "description": "沿门内甬道可进入抄手游廊。",
@@ -37,6 +38,7 @@
       "connections": [
         {
           "id": "conn-corridor-to-gate-0002",
+          "target_map_id": "map-rong_gate-0001",
           "name": "退回角门",
           "direction": "west",
           "description": "循原路可回到荣国府角门。",
@@ -45,6 +47,7 @@
         },
         {
           "id": "conn-corridor-to-hall-0003",
+          "target_map_id": "map-grand_hall-0003",
           "name": "上房门帘",
           "direction": "north",
           "description": "穿过门帘便是贾母上房。",
@@ -53,6 +56,7 @@
         },
         {
           "id": "conn-corridor-to-wing-0004",
+          "target_map_id": "map-west_room-0004",
           "name": "碧纱橱侧间",
           "direction": "east",
           "description": "向东可去碧纱橱外间，那里正有人等着见新来的表妹。",
@@ -76,6 +80,7 @@
       "connections": [
         {
           "id": "conn-hall-to-corridor-0005",
+          "target_map_id": "map-corridor-0002",
           "name": "回游廊",
           "direction": "south",
           "description": "退回抄手游廊。",
@@ -99,6 +104,7 @@
       "connections": [
         {
           "id": "conn-wing-to-corridor-0006",
+          "target_map_id": "map-corridor-0002",
           "name": "回游廊",
           "direction": "west",
           "description": "退回抄手游廊。",

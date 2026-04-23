@@ -1,5 +1,5 @@
 ﻿llm:
-  model: qwen3.6-flash
+  model: qwen3.6-plus
   enable_reasoning: false
   temperature: 0.7
   max_tokens: 5012

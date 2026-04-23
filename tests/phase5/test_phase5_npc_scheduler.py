@@ -13,12 +13,14 @@ from src.data.model.agent_input import (
     SystemExecutionMeta,
 )
 from src.data.model.agent_output import NpcSchedulerAgentLlmOutput
-from src.data.model.base import Attribute, CharacterEntity, Description, MapEntity, Status, WorldEntityStore
+from src.data.model.base import Attribute, CharacterEntity, Description, MapConnection, MapEntity, Status, WorldEntityStore
 from src.data.model.input.agent_chain_input import E4EvolutionStepResult, NpcSchedulerAgentChainInput
 from src.data.model.input.agent_map_intput import NpcSchedulerWorldView
 from src.data.model.input.agent_narrative_input import NarrativeInfo
 from src.data.model.world_state import WorldState
 from src.agent.llm.npc_schedul_agent import NpcSchedulerAgent
+from src.engine.turn_orchestrator import TurnOrchestrator
+from src.utils.world_provider import WorldDataProvider
 
 
 class SchedulerFakeLLMService:
@@ -240,6 +242,64 @@ class TestPhase5NpcScheduler(unittest.TestCase):
 
         self.assertEqual(output.llm_output.step_result.scheduled_npc_ids, ["char-fast-0001"])
         self.assertNotIn("char-dead-0004", output.llm_output.step_result.extra_npc_context)
+
+    def test_scheduler_view_groups_current_adjacent_and_important_characters_by_map(self):
+        current_map = MapEntity(
+            id="map-current-0001",
+            name="当前地图",
+            description=Description(public=["当前地图"]),
+            connections=[
+                MapConnection(
+                    id="conn-current-to-adjacent-0001",
+                    target_map_id="map-adjacent-0002",
+                    name="相邻路",
+                    direction="east",
+                )
+            ],
+        )
+        adjacent_map = MapEntity(
+            id="map-adjacent-0002",
+            name="相邻地图",
+            description=Description(public=["相邻地图"]),
+        )
+        remote_map = MapEntity(
+            id="map-remote-0003",
+            name="远处地图",
+            description=Description(public=["远处地图"]),
+        )
+        player = CharacterEntity(id="char-player-0000", name="玩家", location=current_map.id)
+        local_npc = CharacterEntity(id="char-local-0001", name="本地 NPC", location=current_map.id)
+        adjacent_npc = CharacterEntity(id="char-adjacent-0002", name="相邻 NPC", location=adjacent_map.id)
+        remote_important = CharacterEntity(id="char-remote-0003", name="重要 NPC", location=remote_map.id, important=True)
+        remote_plain = CharacterEntity(id="char-plain-0004", name="普通 NPC", location=remote_map.id, important=False)
+
+        world = WorldState()
+        world.reset(
+            WorldEntityStore(
+                maps={current_map.id: current_map, adjacent_map.id: adjacent_map, remote_map.id: remote_map},
+                characters={
+                    player.id: player,
+                    local_npc.id: local_npc,
+                    adjacent_npc.id: adjacent_npc,
+                    remote_important.id: remote_important,
+                    remote_plain.id: remote_plain,
+                },
+                items={},
+            )
+        )
+
+        view = WorldDataProvider(world).precompute_all_views(current_map_id=current_map.id, turn=1).npc_scheduler_view
+        grouped_ids = {
+            map_slice.map_id: [character.id for character in map_slice.characters]
+            for map_slice in view.available_character_maps
+        }
+        allowed_ids = TurnOrchestrator._collect_allowed_npc_ids(actor_id=player.id, scheduler_view=view)
+
+        self.assertEqual(list(grouped_ids.keys()), [current_map.id, adjacent_map.id, remote_map.id])
+        self.assertEqual(grouped_ids[current_map.id], ["char-player-0000", "char-local-0001"])
+        self.assertEqual(grouped_ids[adjacent_map.id], ["char-adjacent-0002"])
+        self.assertEqual(grouped_ids[remote_map.id], ["char-remote-0003"])
+        self.assertEqual(allowed_ids, ["char-local-0001", "char-adjacent-0002", "char-remote-0003"])
 
 
 if __name__ == "__main__":

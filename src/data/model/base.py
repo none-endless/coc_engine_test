@@ -5,6 +5,8 @@ from typing import List, Dict, Optional, Any, Union, Literal, ClassVar, Set
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from enum import Enum
 
+from .input.agent_memory_input import DialogueEntry, DialogueLogItem
+
 
 ENTITY_ID_PATTERN = re.compile(r"^(map|char|item)-[a-z][a-z0-9_]*-\d{4}$")
 EXTENSION_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_\.]*$")
@@ -136,6 +138,33 @@ class MemoryForNpc(BaseModel):
     short: List[str] = Field(default_factory=list, description="短期记忆摘要，由配置控制")
     short_log: List["ShortLogItem"] = Field(default_factory=list, description="短期日志，由配置控制")
     key_facts: List[str] = Field(default_factory=list, description="关键事实，由配置控制")
+    dialogues: List["DialogueEntry"] = Field(default_factory=list, description="最近若干回合的 NPC 对话信息，进入 LLM 上下文")
+    dialogue_log: List["DialogueLogItem"] = Field(default_factory=list, description="完整 NPC 对话日志，仅用于 debug 与回溯")
+    memory_turns: int = Field(default=5, description="NPC 对话记忆保留回合数")
+
+    def _append_dialogue_with_rollover(self, entry: "DialogueEntry") -> None:
+        self.dialogues.append(entry)
+        if len(self.dialogues) > self.memory_turns:
+            oldest = self.dialogues.pop(0)
+            self.dialogue_log.append(DialogueLogItem(
+                turn=oldest.turn,
+                timestamp=int(datetime.now().timestamp()),
+                speaker=oldest.speaker,
+                content=oldest.content,
+            ))
+
+    def add_dialogue(self, turn: int, speaker: str, content: str) -> None:
+        normalized_content = str(content or "").strip()
+        if not normalized_content:
+            return
+        self._append_dialogue_with_rollover(DialogueEntry(
+            turn=turn,
+            speaker=speaker,
+            content=normalized_content,
+        ))
+
+    def get_recent_dialogues(self, count: int = 5) -> List["DialogueEntry"]:
+        return self.dialogues[-count:]
 
 
 # ============================================================
@@ -205,6 +234,7 @@ class MapChild(BaseModel):
 class MapConnection(BaseModel):
     """地图连接"""
     id: str = Field(default="", description="连接 ID")
+    target_map_id: Optional[str] = Field(default=None, description="连接指向的目标地图 ID")
     name: str = Field(default="", description="连接名称")
     direction: str = Field(default="", description="方向")
     description: str = Field(default="", description="连接描述")
@@ -295,6 +325,7 @@ class CharacterEntity(EntityIdMixin):
 
     id: str = Field(default="", description="角色 ID")
     name: str = Field(default="", description="角色名称")
+    important: bool = Field(default=False, description="是否为 scheduler 可跨地图关注的重要角色")
     basic_info: str = Field(default="", description="基本信息")
     description: "Description" = Field(default_factory=Description, description="角色描述")
     location: str = Field(default="", description="当前位置")

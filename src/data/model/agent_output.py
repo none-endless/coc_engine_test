@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from .agent_input import E1LlmView, E4EvolutionLlmView, E4SchedulerLlmView
 from .input.agent_chain_input import E2IntentInfo, E7CausalityChain
+from .input.agent_memory_input import DialogueEntry
 
 
 class AgentLlmOutputBase(BaseModel):
@@ -223,6 +224,7 @@ class NpcPerformerPendingSideEffects(BaseModel):
     append_short: bool = Field(default=False, description="是否将 current_event 追加到 memory.short")
     append_short_log: bool = Field(default=False, description="是否写入 memory.short_log")
     append_log: bool = Field(default=False, description="是否写入 memory.log")
+    dialogue_entries: List[DialogueEntry] = Field(default_factory=list, description="本回合需要写入 NPC memory.dialogues 的对话条目")
     next_base_goal: Optional[str] = Field(default=None, description="可选的新 base_goal")
     next_active_goal: Optional[str] = Field(default=None, description="可选的新 active_goal")
 

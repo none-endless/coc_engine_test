@@ -53,6 +53,7 @@ from src.data.model.agent_input import (
     StateAgentLlmInput,
     StateAgentSystemInput,
     StateErrorFeedback,
+    StateSourceInputView,
     SystemExecutionMeta,
     SystemRetryControl,
 )
@@ -1014,6 +1015,11 @@ class Engine:
             npc_state_input = StateAgentInput(
                 identity=AgentIdentity(id="state", skill="generate state patch"),
                 llm_input=StateAgentLlmInput(
+                    source_input=StateSourceInputView(
+                        raw_text=output.llm_output.action_text,
+                        source_id=npc_id,
+                        source_kind="npc",
+                    ),
                     e4=E4EvolutionLlmView(summary=chain_result.evolution_summary),
                     world_info=npc_views.state_agent_view,
                     fallback_error=None,

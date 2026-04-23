@@ -732,3 +732,11 @@ llm :根据summary和世界叙事信息提供叙事片段
   - 将可合并的 description.add 归并入 public，并整理关键事实与叙事近期记录
   - 维护npc短期叙事与短期记忆，维护 world_info 与 narrative_info 的一致性快照
   - 若发现不可修复冲突，输出系统降级提示并阻止后续流程继续消费不一致快照
+
+### Agent 上下文字段补充约定
+- `state_change_agent.llm_input.source_input` 必须提供触发状态变更判断的原始输入，字段为 `raw_text`、`source_id`、`source_kind`；玩家分支传玩家原始输入，NPC 分支传 `npc_performer_agent` 的原始动作文本。
+- `state_change_agent.world_info.neighbor_maps` 必须由当前地图 `connections[*].target_map_id` 派生，至少包含相邻地图 `map_id`、`map_name`、`direction`，用于结合玩家方向/地名输入判断是否应生成 MOVE；`neighbor_map_ids` 保留为 ID 简表。
+- `npc_scheduler_agent.world_info.available_character_maps` 必须按地图分组提供可调度角色信息，候选来源为玩家当前地图角色、相邻地图角色、以及 `important=true` 的重要角色。
+- `npc_scheduler_agent.allowed_npc_ids` 必须由 `available_character_maps` 去重派生，LLM 输出的 `scheduled_npc_ids` 和 `extra_npc_context` key 必须限定在该列表内。
+- `CharacterEntity.important` 用于标记 scheduler 可跨地图关注的重要角色；场景作者应优先标记承担教育目标或关键叙事职责的角色。
+- `npc_performer_agent.agent_memory.dialogues` 是可进入 LLM 的近期对话记忆；`dialogue_log` 只用于 debug 和回溯。`intent="dialogue"` 的输出会把玩家原始输入与 NPC 回话写回 NPC 对话记忆。

@@ -17,6 +17,7 @@ from src.data.model.agent_input import (
     StateAgentInput,
     StateAgentLlmInput,
     StateAgentSystemInput,
+    StateSourceInputView,
     SystemExecutionMeta,
     SystemRetryControl,
 )
@@ -43,7 +44,10 @@ class TurnOrchestrator:
     def _collect_allowed_npc_ids(*, actor_id: str, scheduler_view: Any) -> List[str]:
         seen: set[str] = set()
         ordered_ids: List[str] = []
-        for map_slice in [scheduler_view.current_map, *scheduler_view.adjacent_maps]:
+        map_slices = getattr(scheduler_view, "available_character_maps", None)
+        if not map_slices:
+            map_slices = [scheduler_view.current_map, *scheduler_view.adjacent_maps]
+        for map_slice in map_slices:
             for character in getattr(map_slice, "characters", []):
                 npc_id = getattr(character, "id", "")
                 if not npc_id or npc_id == actor_id or npc_id in seen:
@@ -127,6 +131,11 @@ class TurnOrchestrator:
         state_input = StateAgentInput(
             identity=AgentIdentity(id="state", skill="generate state patch"),
             llm_input=StateAgentLlmInput(
+                source_input=StateSourceInputView(
+                    raw_text=raw_input,
+                    source_id=actor_id,
+                    source_kind="player",
+                ),
                 e4=e4,
                 world_info=context["views"].state_agent_view,
                 fallback_error=None,

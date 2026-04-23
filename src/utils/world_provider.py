@@ -17,6 +17,7 @@ from ..data.model.input.agent_map_intput import (
     CharBrief,
     ItemBrief,
     ConnectionBrief,
+    NeighborMapInfo,
     EntityDescriptionSummary,
     EntityWritableView,
     WritableFieldInfo,
@@ -199,14 +200,27 @@ class WorldDataProvider:
             return bool(spec.mutable)
 
         map_writable_paths = set(getattr(type(map_entity), "WRITABLE_PATHS", ()))
-        move_target_ids = [
-            target_id
-            for target_id in (
-                self._resolve_connection_target_map_id(map_id, conn)
-                for conn in map_entity.connections
+        neighbor_maps: List[NeighborMapInfo] = []
+        seen_neighbor_ids: set[str] = set()
+        for conn in map_entity.connections:
+            target_id = self._resolve_connection_target_map_id(map_id, conn)
+            if not target_id or target_id in seen_neighbor_ids:
+                continue
+            try:
+                target_map = self.world_state.get_map(target_id)
+                target_name = target_map.name
+            except KeyError:
+                target_name = ""
+            neighbor_maps.append(
+                NeighborMapInfo(
+                    map_id=target_id,
+                    map_name=target_name,
+                    direction=conn.direction,
+                )
             )
-            if target_id
-        ]
+            seen_neighbor_ids.add(target_id)
+        neighbor_map_ids = [item.map_id for item in neighbor_maps]
+        move_target_ids = list(neighbor_map_ids)
         if map_id not in move_target_ids:
             move_target_ids.insert(0, map_id)
         move_targets_hint = "、".join(move_target_ids)
@@ -381,7 +395,9 @@ class WorldDataProvider:
         return StateAgentWorldView(
             map_id=map_entity.id,
             map_name=map_entity.name,
-            entities=entities
+            entities=entities,
+            neighbor_map_ids=neighbor_map_ids,
+            neighbor_maps=neighbor_maps,
         )
 
     @staticmethod
@@ -417,9 +433,35 @@ class WorldDataProvider:
             for adj_map_id in adjacent_map_ids
         ]
 
+        important_map_ids: List[str] = []
+        important_ids_by_map: Dict[str, set[str]] = {}
+        for char in self.world_state.get_snapshot().characters.values():
+            if not getattr(char, "important", False):
+                continue
+            if not char.location:
+                continue
+            important_ids_by_map.setdefault(char.location, set()).add(char.id)
+            if char.location not in important_map_ids:
+                important_map_ids.append(char.location)
+
+        available_map_ids: List[str] = []
+        for candidate_map_id in [map_id, *adjacent_map_ids, *important_map_ids]:
+            if candidate_map_id and candidate_map_id not in available_map_ids:
+                available_map_ids.append(candidate_map_id)
+
+        local_map_ids = {map_id, *adjacent_map_ids}
+        available_character_maps = [
+            self._build_map_slice(
+                candidate_map_id,
+                allowed_character_ids=None if candidate_map_id in local_map_ids else important_ids_by_map.get(candidate_map_id, set()),
+            )
+            for candidate_map_id in available_map_ids
+        ]
+
         return NpcSchedulerWorldView(
             current_map=current_map,
             adjacent_maps=adjacent_maps,
+            available_character_maps=available_character_maps,
             player_location=map_id
         )
 
@@ -440,7 +482,8 @@ class WorldDataProvider:
     def _build_map_slice(
         self,
         map_id: str,
-        include_char_details: bool = True
+        include_char_details: bool = True,
+        allowed_character_ids: Optional[set[str]] = None,
     ) -> MapSlice:
         """
         构建地图切片
@@ -458,6 +501,8 @@ class WorldDataProvider:
         """
         map_entity = self.world_state.get_map(map_id)
         characters, items = self._get_visible_entities_at_map(map_id)
+        if allowed_character_ids is not None:
+            characters = [char for char in characters if char.id in allowed_character_ids]
 
         # 构建连接简要信息
         connections = [
@@ -479,6 +524,7 @@ class WorldDataProvider:
                 CharBrief(
                     id=char.id,
                     name=char.name,
+                    important=getattr(char, "important", False),
                     basic_info=char.basic_info,
                     description=self._build_description_view_for_npc(char.description)
                 )

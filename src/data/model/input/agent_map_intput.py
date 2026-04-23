@@ -105,6 +105,14 @@ class EntityWritableView(BaseModel):
     writable_fields: List["WritableFieldInfo"] = Field(default_factory=list, description="可写字段列表")
 
 
+class NeighborMapInfo(BaseModel):
+    """StateAgent 可见的相邻地图信息，由当前地图 connections 派生。"""
+
+    map_id: str = Field(description="相邻地图 ID")
+    map_name: str = Field(default="", description="相邻地图名称")
+    direction: str = Field(default="", description="从当前地图前往该相邻地图的方向")
+
+
 class StateAgentWorldView(BaseMapView):
     """
     StateAgent 世界视图
@@ -114,6 +122,8 @@ class StateAgentWorldView(BaseMapView):
     Agent 可以通过 player_entity.writable_fields 中找到 healthy
     """
     entities: List["EntityWritableView"] = Field(default_factory=list, description="所有可写实体列表")
+    neighbor_map_ids: List[str] = Field(default_factory=list, description="通过 map.connections 解析出的相邻地图 ID 列表")
+    neighbor_maps: List["NeighborMapInfo"] = Field(default_factory=list, description="通过 map.connections 解析出的相邻地图 ID、名称与方位")
 
 
 # ============================================================
@@ -124,6 +134,7 @@ class CharBrief(BaseModel):
     """角色简要信息（用于 NpcScheduler/NPC，无 hint）"""
     id: str = Field(description="角色 ID")
     name: str = Field(description="角色名称")
+    important: bool = Field(default=False, description="是否为 scheduler 可跨地图关注的重要角色")
     basic_info: str = Field(default="", description="角色基本信息")
     description: "DescriptionViewForNpc" = Field(description="描述信息（public + add，无 hint）")
 
@@ -163,6 +174,7 @@ class NpcSchedulerWorldView(BaseModel):
     """
     current_map: "MapSlice" = Field(description="当前地图切片")
     adjacent_maps: List["MapSlice"] = Field(default_factory=list, description="相邻地图切片列表")
+    available_character_maps: List["MapSlice"] = Field(default_factory=list, description="按地图分组的可调度角色切片：当前地图、相邻地图、重要角色所在地图")
     player_location: str = Field(description="玩家当前位置")
 
 

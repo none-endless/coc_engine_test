@@ -129,6 +129,14 @@ STATE_CHANGE_SYSTEM_PROMPT = """
 4. 数值不能越过上下界
 5. 列表操作必须避免重复添加或删除不存在元素
 
+## 地图移动上下文
+
+- `world_info.neighbor_maps` 是系统通过当前地图 `connections[*].target_map_id` 解析出的相邻地图列表，包含 `map_id`、`map_name`、`direction`。
+- `world_info.neighbor_map_ids` 是同一列表的 ID 简表，供快速校验目标地图是否合法。
+- 当玩家输入包含方向、地图名、进入/返回/前往等移动意图时，必须优先对照 `neighbor_maps.direction` 与 `neighbor_maps.map_name` 判断是否应生成 `MOVE`。
+- 生成 `MOVE` 到地图的操作时，目标地图必须优先来自当前地图 ID 或 `neighbor_maps[*].map_id`；不要编造未出现在上下文里的地图 ID。
+- 连接锁状态仍以可写字段 `connections[*].is_locked` 为准；如果连接被锁定，不要直接移动到该连接对应地图。
+
 ## 错误处理
 
 - 若收到 `validation_feedback`，必须根据错误信息修正输出
@@ -141,4 +149,11 @@ STATE_CHANGE_SYSTEM_PROMPT = """
   - `DUPLICATE_ENTRY`
   - `ENTRY_NOT_FOUND`
   - `INVALID_TARGET`
+
+## 原始触发输入上下文
+
+- `source_input.raw_text` 是触发本次 `state_change_agent` 的原始文本：玩家分支为玩家原始输入，NPC 分支为 `npc_performer_agent` 输出的原始动作文本。
+- `source_input.source_kind` 标识来源类型，当前可为 `player` 或 `npc`；`source_input.source_id` 是触发该输入的角色 ID。
+- 判断移动、拾取、交互、状态变化时，必须同时参考 `source_input.raw_text` 与 `e4.summary`；如果二者细节有差异，优先用 `source_input.raw_text` 判断明确的方向、目标和动作对象，再用 `e4.summary` 判断结算后的结果。
+- NPC 分支只应为该 NPC 的实际动作生成状态补丁，不要把玩家原始意图误写成 NPC 已执行的状态变化。
 """.strip()

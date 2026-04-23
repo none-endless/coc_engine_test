@@ -152,6 +152,7 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
             connections=[
                 MapConnection(
                     id="conn-east-0001",
+                    target_map_id="map-hall-0002",
                     name="东侧木门",
                     direction="east",
                     description="通往走廊",
@@ -210,6 +211,22 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
             any(item.get("event") == "narrative.fragment.delta" for item in result["narrative"]["stream_events"])
         )
         self.assertEqual(result["merger"]["llm_output"]["narrative_str"], "你离开房间，走入了走廊。")
+
+    def test_state_view_exposes_neighbor_map_ids_from_connections(self):
+        engine = Engine(world_state=self.world, mode="phase3", llm_service=FakeLLMService())
+        views = engine.world_provider.precompute_all_views(current_map_id="map-room-0001", turn=1)
+
+        self.assertEqual(views.state_agent_view.neighbor_map_ids, ["map-hall-0002"])
+        self.assertEqual(
+            [item.model_dump(mode="json") for item in views.state_agent_view.neighbor_maps],
+            [
+                {
+                    "map_id": "map-hall-0002",
+                    "map_name": "走廊",
+                    "direction": "east",
+                }
+            ],
+        )
 
     def test_set_description_public_and_char_index_are_blocked(self):
         runtime = StatePatchRuntime(world_state=self.world)
@@ -561,6 +578,9 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
             )
 
         self.assertNotIn("narrative_info", service.payloads["state_change"])
+        self.assertEqual(service.payloads["state_change"]["source_input"]["raw_text"], "我走向走廊")
+        self.assertEqual(service.payloads["state_change"]["source_input"]["source_id"], "char-player-0000")
+        self.assertEqual(service.payloads["state_change"]["source_input"]["source_kind"], "player")
         self.assertIn("e7", service.payloads["merger"])
         self.assertEqual(len(engine._narrative_info.recent), 5)
         self.assertGreaterEqual(len(engine._narrative_info.narrative_log), 2)

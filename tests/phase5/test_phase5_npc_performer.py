@@ -175,12 +175,18 @@ class TestPhase5NpcPerformer(unittest.TestCase):
         self.assertNotIn("log", performer_payload.get("agent_memory", {}))
         self.assertNotIn("short_log", performer_payload.get("agent_memory", {}))
         self.assertNotIn("long_term_memory", performer_payload.get("agent_memory", {}))
+        self.assertNotIn("dialogue_log", performer_payload.get("agent_memory", {}))
+        self.assertIn("dialogues", performer_payload.get("agent_memory", {}))
         self.assertEqual(performer_payload["player_raw_input"], "我停在原地观察")
         self.assertEqual(performer_payload["e1"]["raw_text"], "我停在原地观察")
         self.assertEqual(performer_payload["e4"]["summary"], "守卫被调度，需要提高警惕。")
         self.assertEqual(performer_payload["current_goal"]["base_goal"], "守卫值班室")
         self.assertEqual(performer_payload["current_goal"]["active_goal"], "保持警惕")
         self.assertEqual(performer_payload["current_goal"]["recent_goal_history"], [])
+        state_payload = engine.dm_agent.llm_service.payloads["state_change"]
+        self.assertEqual(state_payload["source_input"]["raw_text"], "守卫握紧武器，环顾四周，准备检查声响来源。")
+        self.assertEqual(state_payload["source_input"]["source_id"], "char-guard-0001")
+        self.assertEqual(state_payload["source_input"]["source_kind"], "npc")
 
         updated_guard = self.world.get_character("char-guard-0001")
         self.assertEqual(updated_guard.goal.active_goal, "调查可疑声响")
@@ -190,6 +196,36 @@ class TestPhase5NpcPerformer(unittest.TestCase):
         self.assertEqual(updated_guard.memory.short[-1], updated_guard.memory.current_event)
         self.assertEqual(updated_guard.memory.short_log[-1].turn, 6)
         self.assertEqual(updated_guard.memory.log[-1].turn, 6)
+
+    def test_dialogue_intent_writes_player_and_npc_dialogue_memory(self):
+        engine = Engine(
+            world_state=self.world,
+            mode="phase3",
+            llm_service=PerformerPipelineFakeLLMService(
+                performer_payload={
+                    "intent": "dialogue",
+                    "action_text": "守卫低声说：\"我已听见动静，你先留在原地。\"",
+                    "routing_hint": None,
+                    "attributes": [],
+                    "against_char_id": [],
+                    "difficulty": None,
+                    "change_basic_goal": None,
+                    "change_active_goal": None,
+                }
+            ),
+        )
+
+        engine.run_turn(
+            raw_input="你听到什么了？",
+            actor_id="char-player-0000",
+            turn_id=8,
+            trace_id=8008,
+        )
+
+        updated_guard = self.world.get_character("char-guard-0001")
+        self.assertEqual([item.speaker for item in updated_guard.memory.dialogues[-2:]], ["char-player-0000", "char-guard-0001"])
+        self.assertEqual(updated_guard.memory.dialogues[-2].content, "你听到什么了？")
+        self.assertIn("动静", updated_guard.memory.dialogues[-1].content)
 
     def test_npc_performer_can_trigger_numeric_check_and_evolution(self):
         engine = Engine(

@@ -112,6 +112,14 @@ class StateErrorFeedback(BaseModel):
     fix_hint: str = Field(default="", description="系统给出的修正建议")
 
 
+class StateSourceInputView(BaseModel):
+    """触发 state_change 的原始输入视图。"""
+
+    raw_text: str = Field(default="", description="玩家原始输入或 NPC performer 原始动作文本")
+    source_id: str = Field(default="", description="触发输入的角色 ID")
+    source_kind: str = Field(default="", description="触发来源类型：player/npc/system")
+
+
 class AvailableAttributeRef(BaseModel):
     """DM 可用属性引用。"""
 
@@ -176,6 +184,7 @@ class EvolutionAgentInput(BaseModel):
 class StateAgentLlmInput(BaseModel):
     """state_change 的 LLM 输入。"""
 
+    source_input: StateSourceInputView = Field(default_factory=StateSourceInputView, description="触发本次状态变更判断的原始输入")
     e4: E4EvolutionLlmView = Field(description="步骤结算（e4 精简，来自 evolution）")
     world_info: StateAgentWorldView = Field(description="世界信息（描述层 + 数值层）")
     fallback_error: Optional[StateErrorFeedback] = Field(default=None, description="上一轮失败原因与修正提示")

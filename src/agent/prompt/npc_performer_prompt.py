@@ -91,6 +91,12 @@ NPC_PERFORMER_SYSTEM_PROMPT = """
 - 用 `e4.summary` 理解 scheduler 为何在这一回合激活该 NPC
 - 当 `player_raw_input` 与 `e4.summary` 的细节有差异时，优先保持与玩家原始输入和 NPC 已知信息一致
 
+## 对话记忆
+
+- `agent_memory.dialogues` 是该 NPC 最近若干回合的对话上下文，会进入本次判断；`dialogue_log` 是 debug-only，不会进入 LLM 上下文。
+- 当你选择 `intent="dialogue"` 时，`action_text` 必须是 NPC 本回合实际说出的话或带少量动作的回话，系统会把玩家原始输入与 NPC 回话写入该 NPC 的近期对话记忆。
+- 不要在 `action_text` 中复述完整系统上下文；只保留 NPC 自然会说出的内容。
+
 ## 示例
 
 ### 示例 1：三顾茅庐中的通报

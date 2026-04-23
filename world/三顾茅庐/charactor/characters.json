@@ -3,6 +3,7 @@
     "char-player-0000": {
       "id": "char-player-0000",
       "name": "刘备",
+      "important": true,
       "basic_info": "汉室宗亲，胸怀匡扶之志，已是第三次前往隆中拜访诸葛亮。",
       "location": "map-longzhong_path-0001",
       "attributes": {
@@ -53,6 +54,7 @@
     "char-zhuge_liang-0001": {
       "id": "char-zhuge_liang-0001",
       "name": "诸葛亮",
+      "important": true,
       "basic_info": "隐居隆中的卧龙先生，洞察时势，静待真正能托付天下的人。",
       "location": "map-cottage_study-0003",
       "attributes": {
@@ -95,6 +97,7 @@
     "char-guanyu-0002": {
       "id": "char-guanyu-0002",
       "name": "关羽",
+      "important": true,
       "basic_info": "刘备义弟，沉稳持重，对这次拜访依旧保持尊敬与戒备。",
       "location": "map-thatched_courtyard-0002",
       "attributes": {
@@ -129,6 +132,7 @@
     "char-zhangfei-0003": {
       "id": "char-zhangfei-0003",
       "name": "张飞",
+      "important": true,
       "basic_info": "刘备义弟，性情刚烈，对一再拜访山野隐士颇有不平。",
       "location": "map-thatched_courtyard-0002",
       "attributes": {

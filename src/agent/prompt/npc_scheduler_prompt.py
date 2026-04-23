@@ -52,6 +52,13 @@ NPC_SCHEDULER_SYSTEM_PROMPT = """
 - 若某个 NPC 不需要额外上下文，value 填 `null`
 - 若本回合没有 NPC 需要激活，返回空数组和空对象
 
+## 可用角色地图信息
+
+- `world_info.available_character_maps` 是按地图分组的可调度角色信息，来源包括玩家当前地图、相邻地图，以及被标记 `important=true` 的重要角色所在地图。
+- 每个地图切片包含地图描述、连接、角色和物品，使用方式应接近 DM Agent 的当前地图信息，但不得读取角色 memory/goal。
+- `allowed_npc_ids` 是系统从 `available_character_maps` 去重后得到的合法候选列表；最终输出仍必须只从 `allowed_npc_ids` 选择。
+- 如果一个远处 NPC 仅因 `important=true` 出现在候选中，只有当当前事件与其教育目标、剧情职责或叙事因果有明确关联时才调度。
+
 ## 激活判断
 
 - 玩家与 NPC 直接互动、对话、请教、行礼或发生冲突时，应优先考虑相关 NPC

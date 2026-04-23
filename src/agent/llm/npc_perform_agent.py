@@ -13,6 +13,7 @@ from src.data.model.agent_output import (
     NpcPerformerPendingSideEffects,
 )
 from src.data.model.base import Goal, MemoryLogItem, ShortLogItem
+from src.data.model.input.agent_memory_input import DialogueEntry
 from src.data.model.world_state import WorldState
 
 
@@ -44,6 +45,7 @@ class NpcPerformerAgent:
             agent_memory_payload.pop("log", None)
             agent_memory_payload.pop("short_log", None)
             agent_memory_payload.pop("long_term_memory", None)
+            agent_memory_payload.pop("dialogue_log", None)
 
         available_attributes = [item.id for item in agent_input.llm_input.available_attributes if item.id]
         if not available_attributes:
@@ -149,6 +151,14 @@ class NpcPerformerAgent:
         if event_text and pending.append_log:
             character.memory.log.append(MemoryLogItem(turn=turn_id, content=event_text, timestamp=timestamp))
 
+        character.memory.memory_turns = self.memory_turns
+        for entry in pending.dialogue_entries:
+            character.memory.add_dialogue(
+                turn=entry.turn,
+                speaker=entry.speaker,
+                content=entry.content,
+            )
+
         character.goal = self._apply_goal_updates(
             character.goal,
             pending.next_base_goal,
@@ -172,14 +182,41 @@ class NpcPerformerAgent:
     ) -> NpcPerformerPendingSideEffects:
         event_text = self._build_event_text(agent_input=agent_input, llm_output=llm_output, npc_id=npc_id).strip()
         has_event = bool(event_text)
+        dialogue_entries = self._build_dialogue_entries(
+            agent_input=agent_input,
+            llm_output=llm_output,
+            npc_id=npc_id,
+        )
         return NpcPerformerPendingSideEffects(
             current_event=event_text,
             append_short=has_event,
             append_short_log=has_event,
             append_log=has_event,
+            dialogue_entries=dialogue_entries,
             next_base_goal=llm_output.change_basic_goal,
             next_active_goal=llm_output.change_active_goal,
         )
+
+    @staticmethod
+    def _build_dialogue_entries(
+        *,
+        agent_input: NpcPerformerAgentInput,
+        llm_output: NpcPerformerAgentLlmOutput,
+        npc_id: str,
+    ) -> List[DialogueEntry]:
+        if llm_output.intent != "dialogue":
+            return []
+
+        turn_id = agent_input.system_input.execution.turn_id
+        source_id = agent_input.llm_input.e1.source_id
+        player_text = (agent_input.llm_input.player_raw_input or agent_input.llm_input.e1.raw_text or "").strip()
+        npc_text = (llm_output.action_text or "").strip()
+        entries: List[DialogueEntry] = []
+        if source_id and player_text:
+            entries.append(DialogueEntry(turn=turn_id, speaker=source_id, content=player_text))
+        if npc_text:
+            entries.append(DialogueEntry(turn=turn_id, speaker=npc_id, content=npc_text))
+        return entries
 
     @staticmethod
     def _apply_goal_updates(goal: Goal, next_base_goal: Optional[str], next_active_goal: Optional[str]) -> Goal:

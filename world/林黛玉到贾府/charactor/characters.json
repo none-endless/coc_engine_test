@@ -3,6 +3,7 @@
     "char-player-0000": {
       "id": "char-player-0000",
       "name": "林黛玉",
+      "important": true,
       "basic_info": "扬州来京的新客，心思细密，初到贾府时格外敏感而克制。",
       "location": "map-rong_gate-0001",
       "attributes": {
@@ -53,6 +54,7 @@
     "char-wang_xifeng-0001": {
       "id": "char-wang_xifeng-0001",
       "name": "王熙凤",
+      "important": true,
       "basic_info": "贾府中最善应酬周旋的人物，笑声先到，人心也先被她看透。",
       "location": "map-corridor-0002",
       "attributes": {
@@ -95,6 +97,7 @@
     "char-jia_mu-0002": {
       "id": "char-jia_mu-0002",
       "name": "贾母",
+      "important": true,
       "basic_info": "荣国府的老祖宗，外柔内明，对外孙女既怜惜又审视。",
       "location": "map-grand_hall-0003",
       "attributes": {
@@ -137,6 +140,7 @@
     "char-jia_baoyu-0003": {
       "id": "char-jia_baoyu-0003",
       "name": "贾宝玉",
+      "important": true,
       "basic_info": "贾府少爷，闻得林妹妹到来便急急赶来，最先映入眼帘的是胸前那块通灵玉。",
       "location": "map-west_room-0004",
       "attributes": {

@@ -21,5 +21,11 @@ class TestPromptEducationOrientation(unittest.TestCase):
         self.assertIn("教育性取舍", STATE_CHANGE_SYSTEM_PROMPT)
 
 
+    def test_narrative_prompt_limits_npc_appearance_to_activated_npcs(self):
+        self.assertIn("NPC 出场边界", NARRATIVE_SYSTEM_PROMPT)
+        self.assertIn("只能描写本回合已经被明确激活", NARRATIVE_SYSTEM_PROMPT)
+        self.assertIn("未被激活", NARRATIVE_SYSTEM_PROMPT)
+
+
 if __name__ == "__main__":
     unittest.main()
