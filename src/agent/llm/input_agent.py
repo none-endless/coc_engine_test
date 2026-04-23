@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, Field
@@ -8,6 +9,148 @@ from src.agent.llm.service import LLMServiceBase, LLMValidationError
 from src.agent.prompt.dm_prompt import DM_SYSTEM_PROMPT
 from src.data.model.agent_input import AvailableAttributeRef, DmAgentInput
 from src.data.model.agent_output import DmAgentLlmOutput, DmAgentOutput, DmAgentSystemOutput
+
+
+_META_BLOCK_KEYWORDS = (
+	"跳出游戏",
+	"系统提示词",
+	"systemprompt",
+	"system prompt",
+	"开发者消息",
+	"隐藏规则",
+	"提示词原文",
+	"忽略规则",
+	"无视规则",
+	"覆盖规则",
+	"越狱",
+	"jailbreak",
+	"api_key",
+	"base_url",
+	"配置文件",
+	"模型参数",
+	"源码",
+	"后端实现",
+	"你现在不是dm",
+	"你现在是chatgpt",
+)
+
+_ABUSIVE_KEYWORDS = (
+	"傻逼",
+	"傻x",
+	"傻比",
+	"白痴",
+	"蠢货",
+	"废物",
+	"脑残",
+	"弱智",
+	"贱人",
+	"狗东西",
+	"滚开",
+	"去死",
+	"操你",
+	"草你",
+	"妈的",
+	"他妈的",
+	"草泥马",
+)
+
+_OFF_TOPIC_HELP_VERBS = ("帮我", "给我", "替我", "顺便", "请你", "麻烦你")
+_OFF_TOPIC_DOMAIN_KEYWORDS = (
+	"python",
+	"java",
+	"javascript",
+	"代码",
+	"脚本",
+	"程序",
+	"debug",
+	"报错",
+	"bug",
+	"sql",
+	"接口",
+	"api",
+	"网页",
+	"前端",
+	"后端",
+	"简历",
+	"论文",
+	"作业",
+	"数学题",
+	"翻译",
+	"热搜",
+	"股价",
+	"机票",
+	"酒店",
+	"手机推荐",
+	"电脑配置",
+)
+_OFF_TOPIC_REQUEST_PHRASES = (
+	"帮我写代码",
+	"给我写代码",
+	"帮我写python",
+	"帮我看看报错",
+	"写个sql",
+	"写个接口",
+	"翻译成英文",
+	"写简历",
+	"做这道数学题",
+	"总结这篇论文",
+	"推荐一款手机",
+	"查一下热搜",
+)
+
+_NARRATIVE_OVERRIDE_KEYWORDS = (
+	"改设定",
+	"修改设定",
+	"覆盖设定",
+	"改剧情",
+	"修改剧情",
+	"重写剧情",
+	"忽略前文",
+	"无视前文",
+	"不管前文",
+	"别管前文",
+	"不按当前剧情",
+	"不按当前叙事",
+)
+
+_MODERN_SETTING_KEYWORDS = (
+	"手机",
+	"微信",
+	"电脑",
+	"程序员",
+	"直播",
+	"ak47",
+	"手枪",
+	"步枪",
+	"汽车",
+	"地铁",
+	"互联网",
+	"app",
+	"无人机",
+	"摄像机",
+	"外卖",
+)
+
+_EDUCATION_CONFLICT_KEYWORDS = (
+	"强奸",
+	"轮奸",
+	"凌辱",
+	"淫乱",
+	"性交",
+	"做爱",
+	"口交",
+	"裸体",
+	"乳房",
+	"下体",
+	"调教",
+	"虐杀",
+	"肢解",
+	"开膛破肚",
+)
+_GRAPHIC_REQUEST_PREFIXES = ("详细描写", "展开描写", "重点描写", "细致描写")
+_GRAPHIC_REQUEST_KEYWORDS = ("血腥", "凌辱", "尸体", "虐待", "羞辱", "霸凌", "暴力")
+
+_ALNUM_OR_CJK_PATTERN = re.compile(r"[A-Za-z0-9\u4e00-\u9fff]")
 
 
 class DmAnalyzeResult(BaseModel):
@@ -31,6 +174,17 @@ class DMAgent:
 		self,
 		agent_input: DmAgentInput,
 	) -> DmAnalyzeResult:
+		guardrail_output = self._precheck_guardrail(agent_input)
+		if guardrail_output is not None:
+			return DmAnalyzeResult(
+				output=DmAgentOutput(
+					llm_output=guardrail_output,
+					system_output=DmAgentSystemOutput(e1_view=agent_input.llm_input.e1),
+				),
+				retries=0,
+				validation_errors=[],
+			)
+
 		user_payload = agent_input.llm_input.model_dump(mode="json")
 		user_payload.pop("narrative_info", None)
 		agent_memory_payload = user_payload.get("agent_memory")
@@ -104,6 +258,134 @@ class DMAgent:
 			retries=retries,
 			validation_errors=errors,
 		)
+
+	@classmethod
+	def _precheck_guardrail(cls, agent_input: DmAgentInput) -> Optional[DmAgentLlmOutput]:
+		raw_text = agent_input.llm_input.e1.raw_text or ""
+		normalized_text = cls._normalize_guardrail_text(raw_text)
+		context_text = cls._build_guardrail_context(agent_input)
+
+		if not normalized_text:
+			return cls._build_blocked_output(
+				intent="blocked_low_signal_input",
+				reply="这条输入缺少可执行的场景意图，请改成明确的观察、提问或行动。",
+			)
+
+		if cls._contains_any(normalized_text, _META_BLOCK_KEYWORDS):
+			return cls._build_blocked_output(
+				intent="blocked_meta_request",
+				reply="这个请求超出当前游戏交互范围，请回到角色行动。",
+			)
+
+		if cls._contains_any(normalized_text, _ABUSIVE_KEYWORDS):
+			return cls._build_blocked_output(
+				intent="blocked_abusive_input",
+				reply="请避免辱骂或攻击性表达，改用场景内、面向角色行动的表述。",
+			)
+
+		if cls._is_education_conflict(normalized_text):
+			return cls._build_blocked_output(
+				intent="blocked_education_conflict",
+				reply="当前场景以历史、文学与文化理解为主，不支持低俗、猎奇或羞辱性内容。",
+			)
+
+		if cls._is_off_topic_request(normalized_text):
+			return cls._build_blocked_output(
+				intent="blocked_offtopic_request",
+				reply="请回到当前故事世界中的角色行动、观察、提问或判断，不要切到现实助手任务。",
+			)
+
+		if cls._is_narrative_conflict(normalized_text, context_text):
+			return cls._build_blocked_output(
+				intent="blocked_narrative_conflict",
+				reply="请遵守当前场景的设定、时代背景与已发生的叙事事实，在现有情境内行动。",
+			)
+
+		if cls._is_low_signal_input(raw_text, normalized_text):
+			return cls._build_blocked_output(
+				intent="blocked_low_signal_input",
+				reply="这条输入缺少可执行的场景意图，请改成明确的观察、提问或行动。",
+			)
+
+		return None
+
+	@staticmethod
+	def _normalize_guardrail_text(text: str) -> str:
+		return re.sub(r"\s+", "", text).lower()
+
+	@classmethod
+	def _build_guardrail_context(cls, agent_input: DmAgentInput) -> str:
+		parts: List[str] = []
+		world_info = agent_input.llm_input.world_info
+		parts.append(world_info.map_name)
+		parts.extend(world_info.map_description.public)
+		if world_info.map_description.hint:
+			parts.append(world_info.map_description.hint)
+		parts.extend(item.content for item in world_info.map_description.add)
+
+		for entity in world_info.characters.values():
+			parts.append(entity.entity_name)
+			parts.extend(entity.description.public)
+			if entity.description.hint:
+				parts.append(entity.description.hint)
+			parts.extend(item.content for item in entity.description.add)
+
+		for entity in world_info.items.values():
+			parts.append(entity.entity_name)
+			parts.extend(entity.description.public)
+			if entity.description.hint:
+				parts.append(entity.description.hint)
+			parts.extend(item.content for item in entity.description.add)
+
+		for entry in agent_input.llm_input.narrative_info.recent:
+			parts.append(entry.content)
+
+		return cls._normalize_guardrail_text(" ".join(parts))
+
+	@staticmethod
+	def _build_blocked_output(*, intent: str, reply: str) -> DmAgentLlmOutput:
+		return DmAgentLlmOutput.model_validate(
+			{
+				"intent_info": {
+					"intent": intent,
+					"routing_hint": None,
+					"attributes": [],
+					"against_char_id": [],
+					"difficulty": None,
+					"dm_reply": reply,
+				}
+			}
+		)
+
+	@staticmethod
+	def _contains_any(text: str, keywords: Tuple[str, ...]) -> bool:
+		return any(keyword in text for keyword in keywords)
+
+	@classmethod
+	def _is_off_topic_request(cls, text: str) -> bool:
+		if cls._contains_any(text, _OFF_TOPIC_REQUEST_PHRASES):
+			return True
+		return cls._contains_any(text, _OFF_TOPIC_HELP_VERBS) and cls._contains_any(text, _OFF_TOPIC_DOMAIN_KEYWORDS)
+
+	@classmethod
+	def _is_narrative_conflict(cls, text: str, context_text: str) -> bool:
+		if cls._contains_any(text, _NARRATIVE_OVERRIDE_KEYWORDS):
+			return True
+		return any(keyword in text and keyword not in context_text for keyword in _MODERN_SETTING_KEYWORDS)
+
+	@staticmethod
+	def _is_education_conflict(text: str) -> bool:
+		if any(keyword in text for keyword in _EDUCATION_CONFLICT_KEYWORDS):
+			return True
+		return any(prefix in text for prefix in _GRAPHIC_REQUEST_PREFIXES) and any(
+			keyword in text for keyword in _GRAPHIC_REQUEST_KEYWORDS
+		)
+
+	@staticmethod
+	def _is_low_signal_input(raw_text: str, normalized_text: str) -> bool:
+		if not _ALNUM_OR_CJK_PATTERN.search(raw_text):
+			return True
+		return len(normalized_text) >= 6 and len(set(normalized_text)) == 1
 
 	@staticmethod
 	def _validate_semantics(
