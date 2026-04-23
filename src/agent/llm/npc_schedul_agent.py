@@ -35,7 +35,6 @@ class NpcSchedulerAgent:
     def run(self, *, agent_input: NpcSchedulerAgentInput) -> NpcSchedulerAgentOutput:
         execution = agent_input.system_input.execution
         user_payload = agent_input.llm_input.model_dump(mode="json")
-        user_payload.pop("narrative_info", None)
 
         llm_output = self.llm_service.call_llm_json(
             agent_name="npc_scheduler",
@@ -48,23 +47,33 @@ class NpcSchedulerAgent:
         normalized_output = self._normalize_schedule(
             llm_output=llm_output,
             turn_id=execution.turn_id,
+            allowed_npc_ids=agent_input.llm_input.allowed_npc_ids,
         )
         return NpcSchedulerAgentOutput(
             llm_output=normalized_output,
             system_output=NpcSchedulerAgentSystemOutput(trace_id=execution.trace_id, turn_id=execution.turn_id),
         )
 
-    def _normalize_schedule(self, *, llm_output: NpcSchedulerAgentLlmOutput, turn_id: int) -> NpcSchedulerAgentLlmOutput:
+    def _normalize_schedule(
+        self,
+        *,
+        llm_output: NpcSchedulerAgentLlmOutput,
+        turn_id: int,
+        allowed_npc_ids: List[str],
+    ) -> NpcSchedulerAgentLlmOutput:
         """系统侧执行预算、冷却和敏捷排序，避免只依赖 LLM 自觉遵守规则。"""
         step_result = llm_output.step_result
         candidate_ids = self._collect_candidate_ids(
             scheduled_npc_ids=step_result.scheduled_npc_ids,
             extra_npc_context=step_result.extra_npc_context,
         )
+        allowed_set = {npc_id for npc_id in allowed_npc_ids if npc_id}
         available_ids = [
             npc_id
             for npc_id in candidate_ids
-            if self._npc_exists(npc_id) and self._is_schedule_available(npc_id=npc_id, turn_id=turn_id)
+            if (not allowed_set or npc_id in allowed_set)
+            and self._npc_exists(npc_id)
+            and self._is_schedule_available(npc_id=npc_id, turn_id=turn_id)
         ]
         sorted_ids = self._sort_npcs_by_dexterity(candidate_ids=available_ids)
         scheduled_ids = sorted_ids[: self.max_actions_per_turn]

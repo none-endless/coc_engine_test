@@ -26,6 +26,7 @@ from src.data.model.agent_input import (
     ConsistencyKeyFactsCandidate,
     ConsistencyNarrationCandidate,
     ConsistencyRecentChangeLog,
+    CurrentGoalView,
     DmAgentInput,
     DmAgentLlmInput,
     DmAgentSystemInput,
@@ -923,6 +924,7 @@ class Engine:
         self,
         *,
         scheduler_out: NpcSchedulerAgentOutput,
+        raw_input: str,
         source_actor_id: str,
         turn_id: int,
         trace_id: int,
@@ -949,14 +951,21 @@ class Engine:
                 identity=AgentIdentity(id="npcperformer", skill="execute npc behavior"),
                 llm_input=NpcPerformerAgentLlmInput(
                     e4={
+                        "summary": scheduler_out.llm_output.step_result.summary,
                         "scheduled_npc_ids": scheduled_npc_ids,
                         "extra_npc_context": scheduler_out.llm_output.step_result.extra_npc_context,
                     },
                     e1=E1LlmView(
-                        raw_text=scheduler_out.llm_output.step_result.summary,
+                        raw_text=raw_input,
                         source_id=source_actor_id,
                     ),
+                    player_raw_input=raw_input,
                     world_info=self.world_provider.get_npc_view(npc_id),
+                    current_goal=CurrentGoalView(
+                        base_goal=npc_character.goal.base_goal,
+                        active_goal=npc_character.goal.active_goal,
+                        recent_goal_history=npc_character.goal.goal_history[-3:],
+                    ),
                     agent_memory=npc_character.memory,
                     available_attributes=available_attribute_refs,
                     valid_characters=valid_character_refs,
@@ -964,6 +973,7 @@ class Engine:
                 system_input=NpcPerformerAgentSystemInput(
                     chain_raw=NpcPerformerAgentChainInput(
                         e4=E4SchedulerStepResult(
+                            summary=scheduler_out.llm_output.step_result.summary,
                             scheduled_npc_ids=scheduled_npc_ids,
                             extra_npc_context=scheduler_out.llm_output.step_result.extra_npc_context,
                         ),
@@ -972,7 +982,7 @@ class Engine:
                             trace_id=trace_id,
                             world_version=current_world_version,
                             source_id=source_actor_id,
-                            raw_text=scheduler_out.llm_output.step_result.summary,
+                            raw_text=raw_input,
                             metadata={"branch": "npc_performer"},
                         ),
                     ),

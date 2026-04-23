@@ -26,6 +26,7 @@ class SchedulerFakeLLMService:
         self.config = ConfigLoader.load()
         self._scheduled_npc_ids = list(scheduled_npc_ids)
         self._extra_npc_context = dict(extra_npc_context)
+        self.last_payload: Dict[str, Any] = {}
 
     def call_llm_json(
         self,
@@ -37,6 +38,7 @@ class SchedulerFakeLLMService:
         retry_budget: int,
         validation_feedback: Any = None,
     ) -> BaseModel:
+        self.last_payload = user_payload
         return output_model.model_validate(
             {
                 "step_result": {
@@ -121,7 +123,11 @@ class TestPhase5NpcScheduler(unittest.TestCase):
                             "map_name": "房间",
                             "description": {"public": ["测试房间"], "add": []},
                             "connections": [],
-                            "characters": [],
+                            "characters": [
+                                {"id": "char-fast-0001", "name": "蹇墜", "basic_info": "", "description": {"public": [], "add": []}},
+                                {"id": "char-mid-0002", "name": "涓€?", "basic_info": "", "description": {"public": [], "add": []}},
+                                {"id": "char-slow-0003", "name": "鎱㈡墜", "basic_info": "", "description": {"public": [], "add": []}},
+                            ],
                             "items": [],
                         },
                         "adjacent_maps": [],
@@ -129,6 +135,7 @@ class TestPhase5NpcScheduler(unittest.TestCase):
                     }
                 ),
                 narrative_info=NarrativeInfo(),
+                allowed_npc_ids=["char-fast-0001", "char-mid-0002", "char-slow-0003"],
             ),
             system_input=NpcSchedulerAgentSystemInput(
                 chain_raw=NpcSchedulerAgentChainInput(e4=E4EvolutionStepResult(summary="test")),
@@ -156,6 +163,8 @@ class TestPhase5NpcScheduler(unittest.TestCase):
 
         self.assertEqual(output.llm_output.step_result.scheduled_npc_ids, ["char-fast-0001", "char-mid-0002"])
         self.assertEqual(list(output.llm_output.step_result.extra_npc_context.keys()), ["char-fast-0001", "char-mid-0002"])
+        self.assertIn("narrative_info", service.last_payload)
+        self.assertEqual(service.last_payload["allowed_npc_ids"], ["char-fast-0001", "char-mid-0002", "char-slow-0003"])
 
     def test_scheduler_filters_zero_status_and_cooldown(self):
         service = SchedulerFakeLLMService(
@@ -211,6 +220,26 @@ class TestPhase5NpcScheduler(unittest.TestCase):
 
         self.assertNotIn("char-custom_zero-0005", output.llm_output.step_result.scheduled_npc_ids)
         self.assertEqual(output.llm_output.step_result.scheduled_npc_ids, ["char-fast-0001", "char-mid-0002"])
+
+    def test_scheduler_filters_ids_outside_allowed_list(self):
+        service = SchedulerFakeLLMService(
+            scheduled_npc_ids=["char-fast-0001", "char-dead-0004"],
+            extra_npc_context={
+                "char-fast-0001": "fast",
+                "char-dead-0004": "dead",
+            },
+        )
+        agent = NpcSchedulerAgent(
+            llm_service=service,
+            world_state=self.world,
+            max_actions_per_turn=3,
+            cooldown_turns=0,
+        )
+
+        output = agent.run(agent_input=self._build_input())
+
+        self.assertEqual(output.llm_output.step_result.scheduled_npc_ids, ["char-fast-0001"])
+        self.assertNotIn("char-dead-0004", output.llm_output.step_result.extra_npc_context)
 
 
 if __name__ == "__main__":

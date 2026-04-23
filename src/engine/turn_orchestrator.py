@@ -39,6 +39,19 @@ class TurnOrchestrator:
     def __init__(self, engine: "Engine") -> None:
         self._engine = engine
 
+    @staticmethod
+    def _collect_allowed_npc_ids(*, actor_id: str, scheduler_view: Any) -> List[str]:
+        seen: set[str] = set()
+        ordered_ids: List[str] = []
+        for map_slice in [scheduler_view.current_map, *scheduler_view.adjacent_maps]:
+            for character in getattr(map_slice, "characters", []):
+                npc_id = getattr(character, "id", "")
+                if not npc_id or npc_id == actor_id or npc_id in seen:
+                    continue
+                seen.add(npc_id)
+                ordered_ids.append(npc_id)
+        return ordered_ids
+
     async def run_phase3_turn_async(
         self,
         *,
@@ -87,12 +100,17 @@ class TurnOrchestrator:
         merger_chain = evolution_result.e7.model_copy(deep=True)
         checkpoint = e.world_state.capture_checkpoint()
 
+        allowed_npc_ids = self._collect_allowed_npc_ids(
+            actor_id=actor_id,
+            scheduler_view=context["views"].npc_scheduler_view,
+        )
         scheduler_input = NpcSchedulerAgentInput(
             identity=AgentIdentity(id="npcscheduler", skill="schedule npc branch"),
             llm_input=NpcSchedulerAgentLlmInput(
                 e4=e4,
                 world_info=context["views"].npc_scheduler_view,
                 narrative_info=e._narrative_info,
+                allowed_npc_ids=allowed_npc_ids,
             ),
             system_input=NpcSchedulerAgentSystemInput(
                 chain_raw=NpcSchedulerAgentChainInput(e4=e4_chain),
@@ -175,6 +193,7 @@ class TurnOrchestrator:
         if fallback_error is None:
             performer_out, performer_chain, npc_fallback_error = await e._run_performer_branch(
                 scheduler_out=scheduler_out,
+                raw_input=raw_input,
                 source_actor_id=actor_id,
                 turn_id=turn_id,
                 trace_id=trace_id,

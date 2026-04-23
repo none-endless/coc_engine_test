@@ -158,9 +158,11 @@ class TestPhase5NpcPerformer(unittest.TestCase):
         merger_causality = engine.dm_agent.llm_service.payloads["merger"]["e7"]["narrative_causality"]
         self.assertGreaterEqual(merger_causality.count("'source': 'evolution'"), 2)
         self.assertNotIn("narrative_info", engine.dm_agent.llm_service.payloads["evolution"])
-        self.assertNotIn("narrative_info", engine.dm_agent.llm_service.payloads["npc_scheduler"])
+        self.assertIn("narrative_info", engine.dm_agent.llm_service.payloads["npc_scheduler"])
         self.assertNotIn("narrative_info", engine.dm_agent.llm_service.payloads["narrative"])
         self.assertNotIn("narrative_info", engine.dm_agent.llm_service.payloads["merger"])
+        scheduler_payload = engine.dm_agent.llm_service.payloads["npc_scheduler"]
+        self.assertEqual(scheduler_payload["allowed_npc_ids"], ["char-guard-0001", "char-helper-0002"])
 
         performer_payload = engine.dm_agent.llm_service.payloads["npc_performer"]
         available_attr_ids = {item["id"] for item in performer_payload["available_attributes"]}
@@ -173,6 +175,12 @@ class TestPhase5NpcPerformer(unittest.TestCase):
         self.assertNotIn("log", performer_payload.get("agent_memory", {}))
         self.assertNotIn("short_log", performer_payload.get("agent_memory", {}))
         self.assertNotIn("long_term_memory", performer_payload.get("agent_memory", {}))
+        self.assertEqual(performer_payload["player_raw_input"], "我停在原地观察")
+        self.assertEqual(performer_payload["e1"]["raw_text"], "我停在原地观察")
+        self.assertEqual(performer_payload["e4"]["summary"], "守卫被调度，需要提高警惕。")
+        self.assertEqual(performer_payload["current_goal"]["base_goal"], "守卫值班室")
+        self.assertEqual(performer_payload["current_goal"]["active_goal"], "保持警惕")
+        self.assertEqual(performer_payload["current_goal"]["recent_goal_history"], [])
 
         updated_guard = self.world.get_character("char-guard-0001")
         self.assertEqual(updated_guard.goal.active_goal, "调查可疑声响")

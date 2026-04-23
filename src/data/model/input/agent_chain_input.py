@@ -86,6 +86,7 @@ class E4EvolutionStepResult(BaseModel):
 class E4SchedulerStepResult(BaseModel):
     """e4：scheduler 给 performer 的额外上下文。"""
 
+    summary: str = Field(default="", description="scheduler 调度摘要")
     scheduled_npc_ids: List[str] = Field(default_factory=list, description="本回合实际进入调度的 NPC ID 顺序列表")
     extra_npc_context: Dict[str, Optional[str]] = Field(default_factory=dict, description="scheduler 给 performer 的额外信息")
 

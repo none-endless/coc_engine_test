@@ -85,8 +85,17 @@ class E4EvolutionLlmView(BaseModel):
 class E4SchedulerLlmView(BaseModel):
     """e4 的 LLM 精简视图，来自 scheduler。"""
 
+    summary: str = Field(default="", description="scheduler 调度摘要")
     scheduled_npc_ids: list[str] = Field(default_factory=list, description="本回合实际进入调度的 NPC ID 顺序列表")
     extra_npc_context: Dict[str, Optional[str]] = Field(default_factory=dict, description="scheduler 给 performer 的额外上下文")
+
+
+class CurrentGoalView(BaseModel):
+    """Performer 可见的当前目标基线。"""
+
+    base_goal: str = Field(default="", description="当前基础目标")
+    active_goal: str = Field(default="", description="当前活跃目标")
+    recent_goal_history: list[str] = Field(default_factory=list, description="最近目标历史，默认仅展示最近 3 条")
 
 
 class E7LlmView(BaseModel):
@@ -192,6 +201,7 @@ class NpcSchedulerAgentLlmInput(BaseModel):
     e4: E4EvolutionLlmView = Field(description="链路输入（e4 精简，来自 evolution）")
     world_info: NpcSchedulerWorldView = Field(description="世界信息（切片）")
     narrative_info: NarrativeInfo = Field(description="叙事信息")
+    allowed_npc_ids: list[str] = Field(default_factory=list, description="本回合允许进入调度的 NPC ID 列表")
 
 
 class NpcSchedulerAgentSystemInput(BaseModel):
@@ -212,7 +222,9 @@ class NpcPerformerAgentLlmInput(BaseModel):
 
     e4: E4SchedulerLlmView = Field(description="链路输入（e4 精简，来自 scheduler）")
     e1: E1LlmView = Field(description="链路输入（e1 精简）")
+    player_raw_input: str = Field(default="", description="玩家原始输入文本")
     world_info: NpcWorldView = Field(description="世界信息（NPC 切片）")
+    current_goal: CurrentGoalView = Field(default_factory=CurrentGoalView, description="NPC 当前目标基线")
     agent_memory: MemoryForNpc = Field(description="NPC 记忆")
     available_attributes: list[AvailableAttributeRef] = Field(default_factory=list, description="当前 NPC 可用于鉴定的属性列表")
     valid_characters: list[AvailableCharacterRef] = Field(default_factory=list, description="当前可引用的合法角色列表")

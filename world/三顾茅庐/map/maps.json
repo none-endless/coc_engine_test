@@ -14,6 +14,7 @@
       "connections": [
         {
           "id": "conn-longzhong-to-courtyard-0001",
+          "target_map_id": "map-thatched_courtyard-0002",
           "name": "入庐小径",
           "direction": "east",
           "description": "沿着竹影掩映的小径可抵达草庐院前。",
@@ -37,6 +38,7 @@
       "connections": [
         {
           "id": "conn-courtyard-to-path-0002",
+          "target_map_id": "map-longzhong_path-0001",
           "name": "回山道",
           "direction": "west",
           "description": "沿原路退回隆中山道。",
@@ -45,6 +47,7 @@
         },
         {
           "id": "conn-courtyard-to-study-0003",
+          "target_map_id": "map-cottage_study-0003",
           "name": "柴门",
           "direction": "north",
           "description": "推开柴门便可进入诸葛亮起居议事的书房。",
@@ -68,6 +71,7 @@
       "connections": [
         {
           "id": "conn-study-to-courtyard-0004",
+          "target_map_id": "map-thatched_courtyard-0002",
           "name": "退回院前",
           "direction": "south",
           "description": "从书房退回草庐院前。",
