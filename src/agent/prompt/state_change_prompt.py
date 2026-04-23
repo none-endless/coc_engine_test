@@ -137,6 +137,14 @@ STATE_CHANGE_SYSTEM_PROMPT = """
 - 生成 `MOVE` 到地图的操作时，目标地图必须优先来自当前地图 ID 或 `neighbor_maps[*].map_id`；不要编造未出现在上下文里的地图 ID。
 - 连接锁状态仍以可写字段 `connections[*].is_locked` 为准；如果连接被锁定，不要直接移动到该连接对应地图。
 
+## Summary 中的隐含位置变化
+
+- `e4.summary` 是结算后的事实摘要；如果 summary 明确或隐含角色已经到达、进入、离开、返回、被带到、被送往、移至某处，即使 `source_input.raw_text` 没有直接说“移动”，也必须判断是否需要生成 `MOVE` 更新该角色的 `location`。
+- 常见位置变化暗示包括：“来到/走入/进入/抵达/回到/离开/退入/被带入/被送至/随某人前往/在某地停下/已经身处某地”等。
+- 当 summary 与原始输入不一致时，以 summary 表示的结算结果为准；原始输入用于识别意图和目标，summary 用于确认最终是否发生位置变化。
+- 生成 `MOVE` 时，目标地图仍必须来自当前地图、`world_info.neighbor_maps[*].map_id` 或 `world_info` 中明确存在的地图 ID；不能仅凭地名编造不存在的 map_id。
+- 如果 summary 只表达“打算前往/准备进入/想要离开”，但没有确认已经发生移动，则不要生成 `MOVE`，可改用 `description.add` 记录姿态或意图。
+
 ## 错误处理
 
 - 若收到 `validation_feedback`，必须根据错误信息修正输出

@@ -27,5 +27,11 @@ class TestPromptEducationOrientation(unittest.TestCase):
         self.assertIn("未被激活", NARRATIVE_SYSTEM_PROMPT)
 
 
+    def test_state_prompt_uses_summary_hints_for_location_changes(self):
+        self.assertIn("Summary 中的隐含位置变化", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("summary 明确或隐含角色已经到达", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("必须判断是否需要生成 `MOVE`", STATE_CHANGE_SYSTEM_PROMPT)
+
+
 if __name__ == "__main__":
     unittest.main()
