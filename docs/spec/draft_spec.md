@@ -740,7 +740,7 @@ llm :根据summary和世界叙事信息提供叙事片段
 - `UPDATE` 操作的 `value` 必须表示写回后的新数值，而不是增量；若要把 20 提高 10，输出值应为 30。
 - 场景作者可以用 `CharacterEntity.status.*.value` 承载关系值与阶段计时，例如《林黛玉到贾府》中可用 `char-jia_mu-0002.status.daiyu_favor` 表示贾母好感、用 `char-jia_baoyu-0003.status.daiyu_favor` 表示宝玉对黛玉初会的亲近认同，并分别用各自的 `status.first_meet_rounds` 表示对应阶段已消耗回合；《三顾茅庐》中可用 `char-zhuge_liang-0001.status.liubei_favor` 表示诸葛亮对刘备的认可，用 `char-zhuge_liang-0001.status.study_meet_rounds` 表示草庐书房会谈已消耗回合。`state_change_agent` 负责按玩家输入与 summary 更新这些状态，结局 DSL 负责读取它们。这类场景都可按“符合人设的有效互动每回合 +10，失礼每回合 -5，好结局线 55，阶段回合耗尽仍低于 55 则触发次结局”建模。
 - 对这类关系值与阶段计时字段，运行时必须再做硬约束：只允许在对应关键地图的玩家主分支更新；NPC state 分支不得修改；阶段计时每回合最多推进 `+1`，好感类字段每回合最多 `+10 / -5`，超出部分应在落地前被裁剪或拒绝。
-- `npc_scheduler_agent.world_info.available_character_maps` 必须按地图分组提供可调度角色信息，候选来源为玩家当前地图角色、相邻地图角色、以及 `important=true` 的重要角色。
+- `npc_scheduler_agent.world_info.available_character_maps` 必须按地图分组提供可调度角色信息；当前硬规则下，只允许包含玩家当前地图中的角色。
 - `npc_scheduler_agent.allowed_npc_ids` 必须由 `available_character_maps` 去重派生，LLM 输出的 `scheduled_npc_ids` 和 `extra_npc_context` key 必须限定在该列表内。
-- `CharacterEntity.important` 用于标记 scheduler 可跨地图关注的重要角色；场景作者应优先标记承担教育目标或关键叙事职责的角色。
+- `CharacterEntity.important` 可继续用于叙事建模或后续扩展，但在当前硬规则下不会让远处角色绕过“必须与玩家同图”这一 scheduler 激活门槛。
 - `npc_performer_agent.agent_memory.dialogues` 是可进入 LLM 的近期对话记忆；`dialogue_log` 只用于 debug 和回溯。`intent="dialogue"` 的输出会把玩家原始输入与 NPC 回话写回 NPC 对话记忆。

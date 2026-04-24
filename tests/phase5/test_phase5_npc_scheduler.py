@@ -243,7 +243,7 @@ class TestPhase5NpcScheduler(unittest.TestCase):
         self.assertEqual(output.llm_output.step_result.scheduled_npc_ids, ["char-fast-0001"])
         self.assertNotIn("char-dead-0004", output.llm_output.step_result.extra_npc_context)
 
-    def test_scheduler_view_groups_current_adjacent_and_important_characters_by_map(self):
+    def test_scheduler_view_only_exposes_current_map_characters_for_activation(self):
         current_map = MapEntity(
             id="map-current-0001",
             name="当前地图",
@@ -295,11 +295,9 @@ class TestPhase5NpcScheduler(unittest.TestCase):
         }
         allowed_ids = TurnOrchestrator._collect_allowed_npc_ids(actor_id=player.id, scheduler_view=view)
 
-        self.assertEqual(list(grouped_ids.keys()), [current_map.id, adjacent_map.id, remote_map.id])
+        self.assertEqual(list(grouped_ids.keys()), [current_map.id])
         self.assertEqual(grouped_ids[current_map.id], ["char-player-0000", "char-local-0001"])
-        self.assertEqual(grouped_ids[adjacent_map.id], ["char-adjacent-0002"])
-        self.assertEqual(grouped_ids[remote_map.id], ["char-remote-0003"])
-        self.assertEqual(allowed_ids, ["char-local-0001", "char-adjacent-0002", "char-remote-0003"])
+        self.assertEqual(allowed_ids, ["char-local-0001"])
 
 
 if __name__ == "__main__":

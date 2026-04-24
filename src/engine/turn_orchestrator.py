@@ -44,9 +44,10 @@ class TurnOrchestrator:
     def _collect_allowed_npc_ids(*, actor_id: str, scheduler_view: Any) -> List[str]:
         seen: set[str] = set()
         ordered_ids: List[str] = []
-        map_slices = getattr(scheduler_view, "available_character_maps", None)
+        map_slices = list(getattr(scheduler_view, "available_character_maps", []) or [])
         if not map_slices:
-            map_slices = [scheduler_view.current_map, *scheduler_view.adjacent_maps]
+            current_map = getattr(scheduler_view, "current_map", None)
+            map_slices = [current_map] if current_map is not None else []
         for map_slice in map_slices:
             for character in getattr(map_slice, "characters", []):
                 npc_id = getattr(character, "id", "")

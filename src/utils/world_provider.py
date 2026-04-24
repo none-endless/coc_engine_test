@@ -445,30 +445,8 @@ class WorldDataProvider:
             for adj_map_id in adjacent_map_ids
         ]
 
-        important_map_ids: List[str] = []
-        important_ids_by_map: Dict[str, set[str]] = {}
-        for char in self.world_state.get_snapshot().characters.values():
-            if not getattr(char, "important", False):
-                continue
-            if not char.location:
-                continue
-            important_ids_by_map.setdefault(char.location, set()).add(char.id)
-            if char.location not in important_map_ids:
-                important_map_ids.append(char.location)
-
-        available_map_ids: List[str] = []
-        for candidate_map_id in [map_id, *adjacent_map_ids, *important_map_ids]:
-            if candidate_map_id and candidate_map_id not in available_map_ids:
-                available_map_ids.append(candidate_map_id)
-
-        local_map_ids = {map_id, *adjacent_map_ids}
-        available_character_maps = [
-            self._build_map_slice(
-                candidate_map_id,
-                allowed_character_ids=None if candidate_map_id in local_map_ids else important_ids_by_map.get(candidate_map_id, set()),
-            )
-            for candidate_map_id in available_map_ids
-        ]
+        # Scheduler 硬规则：只有当玩家与 NPC 处于同一地图时，该 NPC 才能进入可调度候选。
+        available_character_maps = [self._build_map_slice(map_id)]
 
         return NpcSchedulerWorldView(
             current_map=current_map,

@@ -174,7 +174,7 @@ class NpcSchedulerWorldView(BaseModel):
     """
     current_map: "MapSlice" = Field(description="当前地图切片")
     adjacent_maps: List["MapSlice"] = Field(default_factory=list, description="相邻地图切片列表")
-    available_character_maps: List["MapSlice"] = Field(default_factory=list, description="按地图分组的可调度角色切片：当前地图、相邻地图、重要角色所在地图")
+    available_character_maps: List["MapSlice"] = Field(default_factory=list, description="按地图分组的可调度角色切片；硬规则下仅包含玩家当前所在地图")
     player_location: str = Field(description="玩家当前位置")
 
 
