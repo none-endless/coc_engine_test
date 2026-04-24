@@ -145,6 +145,14 @@ STATE_CHANGE_SYSTEM_PROMPT = """
 - 生成 `MOVE` 时，目标地图仍必须来自当前地图、`world_info.neighbor_maps[*].map_id` 或 `world_info` 中明确存在的地图 ID；不能仅凭地名编造不存在的 map_id。
 - 如果 summary 只表达“打算前往/准备进入/想要离开”，但没有确认已经发生移动，则不要生成 `MOVE`，可改用 `description.add` 记录姿态或意图。
 
+## 物品位置与归属
+
+- 物品归属也通过 `item.location` 表示：物品在地图上时写地图 ID，物品被角色拿着、携带、接收或保管时写角色 ID。
+- 当 `source_input.raw_text` 或 `e4.summary` 明确出现“拿起/拾取/揣入/佩带/收到/接过/交给某人/递给某人/把某物塞到某人手里”等已发生的结果时，通常应生成 `MOVE item-xxx.location = char-xxx`。
+- 当 `source_input.raw_text` 或 `e4.summary` 明确出现“放下/放回/搁在/置于/留在/丢在/挂回某处”等已发生的结果时，通常应生成 `MOVE item-xxx.location = map-xxx`。
+- `world_info.entities` 中物品 `location` 字段的描述会列出“可选目标ID（地图或可见角色）”；生成物品 `MOVE` 时必须严格从这些地图 ID 或可见角色 ID 中选择目标。
+- 不要只在 `description.add` 中描述“物品被拿起/交出/放下”，却遗漏真正的 `MOVE item.location`。
+
 ## 错误处理
 
 - 若收到 `validation_feedback`，必须根据错误信息修正输出

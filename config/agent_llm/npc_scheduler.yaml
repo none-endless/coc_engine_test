@@ -1,4 +1,4 @@
-﻿llm:
+﻿llm:   #5
   model: qwen3.6-plus
   enable_reasoning: false
   temperature: 0.7

@@ -1,5 +1,5 @@
-﻿llm:
-  model: qwen3.6-plus
+﻿llm:   #3
+  model: qwen3.5-27b
   enable_reasoning: false
   temperature: 0.7
   max_tokens: 5012

@@ -32,6 +32,12 @@ class TestPromptEducationOrientation(unittest.TestCase):
         self.assertIn("summary 明确或隐含角色已经到达", STATE_CHANGE_SYSTEM_PROMPT)
         self.assertIn("必须判断是否需要生成 `MOVE`", STATE_CHANGE_SYSTEM_PROMPT)
 
+    def test_state_prompt_teaches_item_location_updates(self):
+        self.assertIn("物品位置与归属", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("物品归属也通过 `item.location` 表示", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("可选目标ID（地图或可见角色）", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("不要只在 `description.add` 中描述“物品被拿起/交出/放下”", STATE_CHANGE_SYSTEM_PROMPT)
+
 
 if __name__ == "__main__":
     unittest.main()

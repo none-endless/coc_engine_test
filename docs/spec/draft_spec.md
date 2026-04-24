@@ -736,6 +736,7 @@ llm :根据summary和世界叙事信息提供叙事片段
 ### Agent 上下文字段补充约定
 - `state_change_agent.llm_input.source_input` 必须提供触发状态变更判断的原始输入，字段为 `raw_text`、`source_id`、`source_kind`；玩家分支传玩家原始输入，NPC 分支传 `npc_performer_agent` 的原始动作文本。
 - `state_change_agent.world_info.neighbor_maps` 必须由当前地图 `connections[*].target_map_id` 派生，至少包含相邻地图 `map_id`、`map_name`、`direction`，用于结合玩家方向/地名输入判断是否应生成 MOVE；`neighbor_map_ids` 保留为 ID 简表。
+- `state_change_agent.world_info.entities` 中，物品实体的 `location` 可选目标必须同时暴露当前地图/相邻地图 ID 与当前可见角色 ID；当前可见角色携带的物品也应进入 state view，避免 LLM 只看见地面物品而遗漏“拿起/交付/放下”后的后续状态更新。
 - `npc_scheduler_agent.world_info.available_character_maps` 必须按地图分组提供可调度角色信息，候选来源为玩家当前地图角色、相邻地图角色、以及 `important=true` 的重要角色。
 - `npc_scheduler_agent.allowed_npc_ids` 必须由 `available_character_maps` 去重派生，LLM 输出的 `scheduled_npc_ids` 和 `extra_npc_context` key 必须限定在该列表内。
 - `CharacterEntity.important` 用于标记 scheduler 可跨地图关注的重要角色；场景作者应优先标记承担教育目标或关键叙事职责的角色。

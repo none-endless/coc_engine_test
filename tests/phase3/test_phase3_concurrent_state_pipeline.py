@@ -23,6 +23,7 @@ from src.data.model.base import (
     DescriptionAddItem,
     ExtensionSchemaItem,
     ExtensionSchemaRegistry,
+    ItemEntity,
     MapConnection,
     MapEntity,
     WorldEntityStore,
@@ -174,13 +175,25 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
                 "health": Attribute(id="health", name="生命", value=10, max_value=10, min_value=0),
             },
         )
+        key = ItemEntity(
+            id="item-key-0001",
+            name="钥匙",
+            description=Description(public=["一把落在地上的铜钥匙"]),
+            location=room.id,
+        )
+        note = ItemEntity(
+            id="item-note-0002",
+            name="字条",
+            description=Description(public=["一张被玩家带在身上的字条"]),
+            location=player.id,
+        )
 
         world = WorldState()
         world.reset(
             WorldEntityStore(
                 maps={room.id: room, hall.id: hall},
                 characters={player.id: player},
-                items={},
+                items={key.id: key, note.id: note},
             )
         )
         self.world = world
@@ -226,6 +239,35 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
                     "direction": "east",
                 }
             ],
+        )
+
+    def test_state_view_exposes_item_move_targets_and_visible_carried_items(self):
+        engine = Engine(world_state=self.world, mode="phase3", llm_service=FakeLLMService())
+        views = engine.world_provider.precompute_all_views(current_map_id="map-room-0001", turn=1)
+
+        item_entities = {
+            entity.entity_id: entity
+            for entity in views.state_agent_view.entities
+            if entity.entity_type == "item"
+        }
+        self.assertIn("item-key-0001", item_entities)
+        self.assertIn("item-note-0002", item_entities)
+
+        key_location_field = next(
+            field
+            for field in item_entities["item-key-0001"].writable_fields
+            if field.field_path == "location"
+        )
+        self.assertIn("map-room-0001", key_location_field.description)
+        self.assertIn("map-hall-0002", key_location_field.description)
+        self.assertIn("char-player-0000", key_location_field.description)
+        self.assertEqual(
+            next(
+                field.current_value
+                for field in item_entities["item-note-0002"].writable_fields
+                if field.field_path == "location"
+            ),
+            "char-player-0000",
         )
 
     def test_set_description_public_and_char_index_are_blocked(self):
@@ -277,6 +319,36 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
         with self.assertRaises(StatePatchError) as idx_err:
             runtime.apply_patch(patch_output=patch_index)
         self.assertEqual(idx_err.exception.code, ERROR_FIELD_NOT_MUTABLE)
+
+    def test_runtime_allows_moving_item_location_to_character(self):
+        runtime = StatePatchRuntime(world_state=self.world)
+        expected_version = int(self.world.get_snapshot().version)
+
+        patch = StateAgentOutput.model_validate(
+            {
+                "llm_output": {
+                    "changes": [
+                        {
+                            "op": "MOVE",
+                            "target_path": "item-key-0001.location",
+                            "value": "char-player-0000",
+                        }
+                    ]
+                },
+                "system_output": {
+                    "patch_meta": {
+                        "trace_id": 11,
+                        "turn_id": 1,
+                        "retry_seq": 0,
+                        "patch_id": "item-move-1",
+                        "expected_version": expected_version,
+                    }
+                },
+            }
+        )
+
+        runtime.apply_patch(patch_output=patch)
+        self.assertEqual(self.world.get_item("item-key-0001").location, "char-player-0000")
 
     def test_extension_registry_mutable_is_enforced(self):
         world = WorldState()

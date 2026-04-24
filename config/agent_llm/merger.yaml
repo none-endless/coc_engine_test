@@ -1,4 +1,4 @@
-﻿llm:
+﻿llm:    #1.5
   model: qwen3.6-flash
   enable_reasoning: false
   temperature: 0.7

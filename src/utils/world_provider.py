@@ -274,6 +274,12 @@ class WorldDataProvider:
 
         # 2. 角色实体（只获取在当前地图上的）
         characters, items = self._get_visible_entities_at_map(map_id)
+        visible_character_ids = [char.id for char in characters]
+        item_move_target_ids = list(move_target_ids)
+        for char_id in visible_character_ids:
+            if char_id not in item_move_target_ids:
+                item_move_target_ids.append(char_id)
+        item_move_targets_hint = "、".join(item_move_target_ids)
         for char in characters:
             char_writable_paths = set(getattr(type(char), "WRITABLE_PATHS", ()))
             char_writable_fields: List[WritableFieldInfo] = []
@@ -346,8 +352,14 @@ class WorldDataProvider:
                 writable_fields=char_writable_fields
             ))
 
-        # 3. 物品实体（只获取在当前地图上的，物品在人物身上时不可见）
-        for item in items:
+        # 3. 物品实体（当前地图上的物品 + 当前可见角色携带的物品）
+        visible_items_by_id = {item.id: item for item in items}
+        if visible_character_ids:
+            for item in self.world_state.get_store_copy().items.values():
+                if item.location in visible_character_ids:
+                    visible_items_by_id[item.id] = item
+
+        for item in visible_items_by_id.values():
             item_writable_paths = set(getattr(type(item), "WRITABLE_PATHS", ()))
             item_writable_fields: List[WritableFieldInfo] = []
             if "location" in item_writable_paths:
@@ -357,7 +369,7 @@ class WorldDataProvider:
                         field_name="位置",
                         current_value=item.location,
                         value_type="string",
-                        description=f"物品当前所在位置；可选地图ID：{move_targets_hint}"
+                        description=f"物品当前所在位置；可选目标ID（地图或可见角色）：{item_move_targets_hint}"
                     )
                 )
             if "description.add" in item_writable_paths:
@@ -388,7 +400,7 @@ class WorldDataProvider:
                 entity_id=item.id,
                 entity_type="item",
                 entity_name=item.name,
-                description_summary="地图上的物品",
+                description_summary="当前可见物品",
                 writable_fields=item_writable_fields
             ))
 
