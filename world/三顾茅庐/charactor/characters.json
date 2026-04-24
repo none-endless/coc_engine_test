@@ -91,6 +91,24 @@
           "description": "辨析与陈说天下大势的能力"
         }
       },
+      "status": {
+        "liubei_favor": {
+          "id": "liubei_favor",
+          "name": "刘备好感",
+          "value": 20,
+          "max_value": 100,
+          "min_value": 0,
+          "description": "诸葛亮对刘备礼数、诚意与匡扶天下之志的认可程度，会随草庐书房中的应对变化。"
+        },
+        "study_meet_rounds": {
+          "id": "study_meet_rounds",
+          "name": "书房会面回合",
+          "value": 0,
+          "max_value": 5,
+          "min_value": 0,
+          "description": "刘备在草庐书房与诸葛亮会谈已消耗的互动回合数；达到 5 且好感仍低于 55 时触发未能请出孔明的次结局。"
+        }
+      },
       "inventory": {},
       "extensions": {}
     },

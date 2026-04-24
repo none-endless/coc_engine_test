@@ -2,7 +2,7 @@
   "endings": [
     {
       "id": "ending-kongming-out-0001",
-      "condition": "char-player-0000.location == map-cottage_study-0003 and item-visit_card-0001.location == char-player-0000 and item-gift_wine-0002.location == char-player-0000",
+      "condition": "char-player-0000.location == map-cottage_study-0003 and item-visit_card-0001.location == char-player-0000 and item-gift_wine-0002.location == char-player-0000 and char-zhuge_liang-0001.status.liubei_favor.value >= 55",
       "text": "刘备执礼入庐，又以言辞和诚意打动诸葛亮。卧龙终于起身相送，三顾之约在这一刻化成了出山辅汉的承诺。"
     },
     {
@@ -14,6 +14,11 @@
       "id": "ending-empty_return-0003",
       "condition": "char-player-0000.location == map-cottage_study-0003 and item-visit_card-0001.location != char-player-0000",
       "text": "你仓促入庐，连最基本的名帖礼数都未准备妥当。诸葛亮没有动怒，只是让这次会面停在了门槛之前。"
+    },
+    {
+      "id": "ending-failed-to-recruit-kongming-0004",
+      "condition": "char-zhuge_liang-0001.status.study_meet_rounds.value >= 5 and char-zhuge_liang-0001.status.liubei_favor.value < 55",
+      "text": "你虽已在草庐书房中与诸葛亮往复数轮，却始终未能让这位卧龙真正放下观望。五回合过去，礼数尚存，心意也并非全无，只是托付天下之志仍未被彻底说服。这第三次拜访终究未能请得孔明出山。"
     }
   ]
 }

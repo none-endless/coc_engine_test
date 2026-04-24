@@ -70,6 +70,9 @@ STATE_CHANGE_SYSTEM_PROMPT = """
 }
 ```
 
+- `UPDATE` 的 `value` 必须是写回后的新数值，不是增量。
+- 例如当前值为 20，本回合需要增加 15，则应输出 35；若当前值为 20，需要减少 5，则应输出 15。
+
 ### 5. MOVE - 变更位置
 ```json
 {
@@ -152,6 +155,44 @@ STATE_CHANGE_SYSTEM_PROMPT = """
 - 当 `source_input.raw_text` 或 `e4.summary` 明确出现“放下/放回/搁在/置于/留在/丢在/挂回某处”等已发生的结果时，通常应生成 `MOVE item-xxx.location = map-xxx`。
 - `world_info.entities` 中物品 `location` 字段的描述会列出“可选目标ID（地图或可见角色）”；生成物品 `MOVE` 时必须严格从这些地图 ID 或可见角色 ID 中选择目标。
 - 不要只在 `description.add` 中描述“物品被拿起/交出/放下”，却遗漏真正的 `MOVE item.location`。
+
+## 场景关系值：林黛玉到贾府
+
+- 当 `world_info.map_id == "map-grand_hall-0003"` 且当前玩家是 `char-player-0000` 时，要额外关注贾母 `char-jia_mu-0002` 的两个状态字段：
+  - `status.daiyu_favor.value`：贾母对林黛玉的接纳与怜爱程度。
+  - `status.first_meet_rounds.value`：林黛玉在贾母上房初见中已消耗的互动回合数。
+- 只有在 `source_input.source_kind == "player"` 且 `source_input.source_id == "char-player-0000"` 的玩家分支里，才处理这两个状态；NPC 分支不要改它们。
+- 每个发生在 `map-grand_hall-0003` 的玩家回合，都应把 `status.first_meet_rounds.value` 按当前值加 1，最高写到 5。
+- 若本回合行动与结算体现出林黛玉“敏感、克制、守礼、带家书、行礼问安、低声答话、谨慎观察、哀而不失分寸、尊重长辈”的人设，应把 `status.daiyu_favor.value` 在当前值基础上提高 10，最高不超过 100。
+- 若本回合行动体现“失礼、轻慢、唐突、顶撞、炫耀、喧哗、无视贾母与贾府礼序、把哀思化为失控冒犯”，应把 `status.daiyu_favor.value` 在当前值基础上降低 5，最低不低于 0。
+- 中性动作（如单纯移动、无关收纳、未与贾母形成有效互动的观察）可以只增加 `status.first_meet_rounds.value`，不必调整好感。
+- 同一回合对 `status.daiyu_favor.value` 最多做一次调整；不要同时加分又减分。
+- 当 `status.daiyu_favor.value` 达到 55 或以上时，说明这场初见已经满足好结局阈值；若 `status.first_meet_rounds.value` 达到 5 且好感仍低于 55，则会落入“未成功融入贾府”的次结局。
+
+## 场景关系值：宝玉初会
+
+- 当 `world_info.map_id == "map-west_room-0004"` 且当前玩家是 `char-player-0000` 时，要额外关注宝玉 `char-jia_baoyu-0003` 的两个状态字段：
+  - `status.daiyu_favor.value`：宝玉对林黛玉初会时的亲近、认同与怜惜程度。
+  - `status.first_meet_rounds.value`：林黛玉在碧纱橱外间与宝玉初会已消耗的互动回合数。
+- 只有在 `source_input.source_kind == "player"` 且 `source_input.source_id == "char-player-0000"` 的玩家分支里，才处理这两个状态；NPC 分支不要改它们。
+- 每个发生在 `map-west_room-0004` 的玩家回合，都应把 `status.first_meet_rounds.value` 按当前值加 1，最高写到 5。
+- 若本回合行动与结算体现出林黛玉“敏感含蓄、以礼相待、观察宝玉与通灵玉、虽惊异却不失分寸、答话自然、流露知音般的微妙亲近”的人物气质，应把 `status.daiyu_favor.value` 在当前值基础上提高 10，最高不超过 100。
+- 若本回合行动体现“冷淡失礼、轻慢讥刺、无端顶撞、刻意炫耀、粗暴否定宝玉与通灵玉、把哀思化为对人冒犯”，应把 `status.daiyu_favor.value` 在当前值基础上降低 5，最低不低于 0。
+- 中性动作（如单纯移动、整理衣物、尚未与宝玉形成有效对话或观察反馈）可以只增加 `status.first_meet_rounds.value`，不必调整好感。
+- 同一回合对 `status.daiyu_favor.value` 最多做一次调整；不要同时加分又减分。
+- 当 `status.daiyu_favor.value` 达到 55 或以上时，说明这场初会已经满足宝玉初会好结局阈值；若 `status.first_meet_rounds.value` 达到 5 且好感仍低于 55，则会落入“未能与宝玉一见如故”的次结局。
+## 场景关系值：三顾茅庐
+
+- 当 `world_info.map_id == "map-cottage_study-0003"` 且当前玩家是 `char-player-0000` 时，要额外关注诸葛亮 `char-zhuge_liang-0001` 的两个状态字段：
+  - `status.liubei_favor.value`：诸葛亮对刘备礼数、诚意与匡扶天下之志的认可程度。
+  - `status.study_meet_rounds.value`：刘备在草庐书房与诸葛亮会谈已消耗的互动回合数。
+- 只有在 `source_input.source_kind == "player"` 且 `source_input.source_id == "char-player-0000"` 的玩家分支里，才处理这两个状态；NPC 分支不要改它们。
+- 每个发生在 `map-cottage_study-0003` 的玩家回合，都应把 `status.study_meet_rounds.value` 按当前值加 1，最高写到 5。
+- 若本回合行动与结算体现出刘备“持礼而入、奉上名帖礼物、谦抑诚恳、陈说匡扶汉室之志、尊重诸葛亮判断、不催逼、不摆架子、能安抚同伴失礼风险”的人设，应把 `status.liubei_favor.value` 在当前值基础上提高 10，最高不超过 100。
+- 若本回合行动体现“失礼催逼、夸饰自矜、轻慢隐居、只谈私利、放任喧哗惊扰、无视诸葛亮与草庐礼序”，应把 `status.liubei_favor.value` 在当前值基础上降低 5，最低不低于 0。
+- 中性动作（如单纯移动、整理随身物品、未与诸葛亮形成有效互动的观察）可以只增加 `status.study_meet_rounds.value`，不必调整好感。
+- 同一回合对 `status.liubei_favor.value` 最多做一次调整；不要同时加分又减分。
+- 当 `status.liubei_favor.value` 达到 55 或以上时，说明这场会谈已经满足请孔明出山的好结局阈值；若 `status.study_meet_rounds.value` 达到 5 且好感仍低于 55，则会落入“未能请出孔明”的次结局。
 
 ## 错误处理
 

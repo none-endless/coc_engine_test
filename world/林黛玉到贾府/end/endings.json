@@ -2,18 +2,28 @@
   "endings": [
     {
       "id": "ending-first_meet_baoyu-0001",
-      "condition": "char-player-0000.location == map-west_room-0004 and item-family_letter-0001.location == char-player-0000 and item-spirit_jade-0003.location == char-jia_baoyu-0003",
+      "condition": "char-player-0000.location == map-west_room-0004 and item-family_letter-0001.location == char-player-0000 and item-spirit_jade-0003.location == char-jia_baoyu-0003 and char-jia_baoyu-0003.status.daiyu_favor.value >= 55",
       "text": "你在碧纱橱外间与宝玉初会，那块通灵玉与一句“这个妹妹我曾见过”让贾府的第一天立刻有了宿命意味。"
     },
     {
       "id": "ending-meet_grandmother-0002",
-      "condition": "char-player-0000.location == map-grand_hall-0003 and item-family_letter-0001.location == char-player-0000",
-      "text": "你带着扬州家书拜见贾母，哀思与亲情在上房里一并落定。林黛玉终于真正踏进了贾府的人情脉络。"
+      "condition": "char-player-0000.location == map-grand_hall-0003 and char-jia_mu-0002.status.daiyu_favor.value >= 55",
+      "text": "你在贾母上房中以合宜的礼数、分寸与神情安顿了这场初见。贾母望向你的目光由审视转为怜爱，哀思与亲情在上房里一并落定。林黛玉终于真正踏进了贾府的人情脉络。"
     },
     {
       "id": "ending-rushed_entry-0003",
       "condition": "char-player-0000.location == map-grand_hall-0003 and item-family_letter-0001.location != char-player-0000",
       "text": "你匆忙入上房，却连最该带在身边的家书也未曾取上。这场初见仍见宽厚，却在礼数上先失了一步。"
+    },
+    {
+      "id": "ending-failed_to_settle-0004",
+      "condition": "char-jia_mu-0002.status.first_meet_rounds.value >= 5 and char-jia_mu-0002.status.daiyu_favor.value < 55",
+      "text": "你在贾母上房中几番应对，始终未能把握贾府这层深宅礼序的轻重缓急。五回合过去，贾母虽仍存怜惜，却未真正放下审视。林黛玉没有成功融入贾府，这场初见只留下更深的惶惑与拘束。"
+    },
+    {
+      "id": "ending-first_meet_baoyu_failed-0005",
+      "condition": "char-jia_baoyu-0003.status.first_meet_rounds.value >= 5 and char-jia_baoyu-0003.status.daiyu_favor.value < 55",
+      "text": "你与宝玉在碧纱橱外间几番应对，始终未能让这场初会落到知己般的天然亲近上。五回合过去，那块通灵玉仍在眼前，人却只觉话不投机。林黛玉没能与宝玉结成《红楼梦》里那般一见如故的情分。"
     }
   ]
 }

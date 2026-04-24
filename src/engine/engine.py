@@ -107,6 +107,51 @@ EngineMode = Literal["phase2", "phase3", "phase4"]
 class Engine:
     """统一引擎入口，负责 phase2/3/4 的主链路、双真值池和并发分支协调。"""
 
+    _SCENE_RELATION_GUARDS: Dict[str, Dict[str, Any]] = {
+        "char-jia_mu-0002.status.daiyu_favor.value": {
+            "map_id": "map-grand_hall-0003",
+            "kind": "favor",
+            "min_value": 0,
+            "max_value": 100,
+            "max_up": 10,
+            "max_down": 5,
+        },
+        "char-jia_mu-0002.status.first_meet_rounds.value": {
+            "map_id": "map-grand_hall-0003",
+            "kind": "round",
+            "min_value": 0,
+            "max_value": 5,
+        },
+        "char-jia_baoyu-0003.status.daiyu_favor.value": {
+            "map_id": "map-west_room-0004",
+            "kind": "favor",
+            "min_value": 0,
+            "max_value": 100,
+            "max_up": 10,
+            "max_down": 5,
+        },
+        "char-jia_baoyu-0003.status.first_meet_rounds.value": {
+            "map_id": "map-west_room-0004",
+            "kind": "round",
+            "min_value": 0,
+            "max_value": 5,
+        },
+        "char-zhuge_liang-0001.status.liubei_favor.value": {
+            "map_id": "map-cottage_study-0003",
+            "kind": "favor",
+            "min_value": 0,
+            "max_value": 100,
+            "max_up": 10,
+            "max_down": 5,
+        },
+        "char-zhuge_liang-0001.status.study_meet_rounds.value": {
+            "map_id": "map-cottage_study-0003",
+            "kind": "round",
+            "min_value": 0,
+            "max_value": 5,
+        },
+    }
+
     def __init__(
         self,
         world_state: WorldState,
@@ -209,6 +254,70 @@ class Engine:
         self._narrative_event_listener: Optional[Callable[[Dict[str, Any]], None]] = None
         self._restore_narrative_info_from_storage()
         self._persist_world_snapshot()
+
+    @staticmethod
+    def _build_state_value_index(agent_input: StateAgentInput) -> Dict[str, Any]:
+        index: Dict[str, Any] = {}
+        for entity in agent_input.llm_input.world_info.entities:
+            for field in entity.writable_fields:
+                index[f"{entity.entity_id}.{field.field_path}"] = field.current_value
+        return index
+
+    def _sanitize_state_scene_relation_changes(
+        self,
+        *,
+        agent_input: StateAgentInput,
+        output: StateAgentOutput,
+    ) -> StateAgentOutput:
+        source_input = agent_input.llm_input.source_input
+        current_map_id = str(agent_input.llm_input.world_info.map_id or "")
+        current_values = self._build_state_value_index(agent_input)
+        sanitized = output.model_copy(deep=True)
+        kept_changes = []
+
+        for change in sanitized.llm_output.changes:
+            target_path = str(change.target_path or "")
+            rule = self._SCENE_RELATION_GUARDS.get(target_path)
+            if rule is None:
+                kept_changes.append(change)
+                continue
+
+            if source_input.source_kind != "player" or source_input.source_id != "char-player-0000":
+                continue
+            if current_map_id != str(rule["map_id"]):
+                continue
+            if str(change.op) != "UPDATE":
+                continue
+
+            current_value = current_values.get(target_path)
+            if current_value is None or not isinstance(change.value, (int, float)):
+                continue
+
+            current_int = int(current_value)
+            min_value = int(rule["min_value"])
+            max_value = int(rule["max_value"])
+
+            if rule["kind"] == "round":
+                change.value = min(max_value, current_int + 1)
+                kept_changes.append(change)
+                continue
+
+            proposed = int(change.value)
+            delta = proposed - current_int
+            max_up = int(rule["max_up"])
+            max_down = int(rule["max_down"])
+            if delta > max_up:
+                proposed = current_int + max_up
+            elif delta < -max_down:
+                proposed = current_int - max_down
+            elif delta not in {0, max_up, -max_down}:
+                continue
+
+            change.value = max(min_value, min(max_value, proposed))
+            kept_changes.append(change)
+
+        sanitized.llm_output.changes = kept_changes
+        return sanitized
 
     def set_narrative_event_listener(self, listener: Optional[Callable[[Dict[str, Any]], None]]) -> None:
         """Register a callback to receive realtime narrative stream events."""
@@ -1521,6 +1630,7 @@ class Engine:
                     retry_seq=retry_seq,
                     patch_id=f"patch-{current_input.system_input.execution.turn_id}-{current_input.system_input.execution.trace_id}-{retry_seq}",
                 )
+                output = self._sanitize_state_scene_relation_changes(agent_input=current_input, output=output)
             except LLMServiceError as exc:
                 last_feedback = StateErrorFeedback(
                     message=str(exc),

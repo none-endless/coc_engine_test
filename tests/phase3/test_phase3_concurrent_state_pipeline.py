@@ -16,6 +16,14 @@ from src.data.model.agent_output import (
     StateAgentLlmOutput,
     StateAgentOutput,
 )
+from src.data.model.agent_input import (
+    AgentIdentity,
+    E4EvolutionLlmView,
+    StateAgentInput,
+    StateAgentLlmInput,
+    StateAgentSystemInput,
+    StateSourceInputView,
+)
 from src.data.model.base import (
     Attribute,
     CharacterEntity,
@@ -26,6 +34,7 @@ from src.data.model.base import (
     ItemEntity,
     MapConnection,
     MapEntity,
+    Status,
     WorldEntityStore,
 )
 from src.data.model.world_state import WorldState
@@ -349,6 +358,220 @@ class TestPhase3ConcurrentStatePipeline(unittest.TestCase):
 
         runtime.apply_patch(patch_output=patch)
         self.assertEqual(self.world.get_item("item-key-0001").location, "char-player-0000")
+
+    def test_state_relation_updates_are_dropped_for_npc_branch(self):
+        grand_hall = MapEntity(
+            id="map-grand_hall-0003",
+            name="贾母上房",
+            description=Description(public=["上房内陈设庄重。"]),
+        )
+        player = CharacterEntity(
+            id="char-player-0000",
+            name="林黛玉",
+            location=grand_hall.id,
+            attributes={"dexterity": Attribute(id="dexterity", name="敏捷", value=60)},
+        )
+        jia_mu = CharacterEntity(
+            id="char-jia_mu-0002",
+            name="贾母",
+            location=grand_hall.id,
+            attributes={"dexterity": Attribute(id="dexterity", name="敏捷", value=40)},
+            status={
+                "daiyu_favor": Status(id="daiyu_favor", name="黛玉好感", value=50, max_value=100, min_value=0),
+                "first_meet_rounds": Status(id="first_meet_rounds", name="初见回合", value=4, max_value=5, min_value=0),
+            },
+        )
+        world = WorldState()
+        world.reset(
+            WorldEntityStore(
+                maps={grand_hall.id: grand_hall},
+                characters={player.id: player, jia_mu.id: jia_mu},
+                items={},
+            )
+        )
+        engine = Engine(world_state=world, mode="phase3", llm_service=FakeLLMService())
+        view = engine.world_provider.precompute_all_views(current_map_id=grand_hall.id, turn=1).state_agent_view
+        state_input = StateAgentInput(
+            identity=AgentIdentity(id="state", skill="generate state patch"),
+            llm_input=StateAgentLlmInput(
+                source_input=StateSourceInputView(
+                    raw_text="贾母含笑点头",
+                    source_id="char-jia_mu-0002",
+                    source_kind="npc",
+                ),
+                e4=E4EvolutionLlmView(summary="贾母含笑点头，示意继续说话。"),
+                world_info=view,
+            ),
+            system_input=StateAgentSystemInput(),
+        )
+        output = StateAgentOutput.model_validate(
+            {
+                "llm_output": {
+                    "changes": [
+                        {
+                            "op": "UPDATE",
+                            "target_path": "char-jia_mu-0002.status.daiyu_favor.value",
+                            "value": 60,
+                        },
+                        {
+                            "op": "UPDATE",
+                            "target_path": "char-jia_mu-0002.status.first_meet_rounds.value",
+                            "value": 5,
+                        },
+                        {
+                            "op": "ADD",
+                            "target_path": "char-jia_mu-0002.description.add",
+                            "value": ["贾母含笑不语。"],
+                        },
+                    ]
+                },
+                "system_output": {"patch_meta": {"trace_id": 1, "turn_id": 1, "retry_seq": 0, "patch_id": "guard-1"}},
+            }
+        )
+
+        sanitized = engine._sanitize_state_scene_relation_changes(agent_input=state_input, output=output)
+        self.assertEqual(len(sanitized.llm_output.changes), 1)
+        self.assertEqual(sanitized.llm_output.changes[0].target_path, "char-jia_mu-0002.description.add")
+
+    def test_state_relation_updates_are_clamped_for_player_branch(self):
+        study = MapEntity(
+            id="map-cottage_study-0003",
+            name="草庐书房",
+            description=Description(public=["书房内琴书并列。"]),
+        )
+        player = CharacterEntity(
+            id="char-player-0000",
+            name="刘备",
+            location=study.id,
+            attributes={"dexterity": Attribute(id="dexterity", name="敏捷", value=60)},
+        )
+        zhuge = CharacterEntity(
+            id="char-zhuge_liang-0001",
+            name="诸葛亮",
+            location=study.id,
+            attributes={"dexterity": Attribute(id="dexterity", name="敏捷", value=40)},
+            status={
+                "liubei_favor": Status(id="liubei_favor", name="刘备好感", value=20, max_value=100, min_value=0),
+                "study_meet_rounds": Status(id="study_meet_rounds", name="会谈回合", value=0, max_value=5, min_value=0),
+            },
+        )
+        world = WorldState()
+        world.reset(
+            WorldEntityStore(
+                maps={study.id: study},
+                characters={player.id: player, zhuge.id: zhuge},
+                items={},
+            )
+        )
+        engine = Engine(world_state=world, mode="phase3", llm_service=FakeLLMService())
+        view = engine.world_provider.precompute_all_views(current_map_id=study.id, turn=1).state_agent_view
+        state_input = StateAgentInput(
+            identity=AgentIdentity(id="state", skill="generate state patch"),
+            llm_input=StateAgentLlmInput(
+                source_input=StateSourceInputView(
+                    raw_text="我恭敬陈述匡扶汉室之志",
+                    source_id="char-player-0000",
+                    source_kind="player",
+                ),
+                e4=E4EvolutionLlmView(summary="刘备言辞恳切，礼数周全。"),
+                world_info=view,
+            ),
+            system_input=StateAgentSystemInput(),
+        )
+        output = StateAgentOutput.model_validate(
+            {
+                "llm_output": {
+                    "changes": [
+                        {
+                            "op": "UPDATE",
+                            "target_path": "char-zhuge_liang-0001.status.liubei_favor.value",
+                            "value": 80,
+                        },
+                        {
+                            "op": "UPDATE",
+                            "target_path": "char-zhuge_liang-0001.status.study_meet_rounds.value",
+                            "value": 4,
+                        },
+                    ]
+                },
+                "system_output": {"patch_meta": {"trace_id": 2, "turn_id": 1, "retry_seq": 0, "patch_id": "guard-2"}},
+            }
+        )
+
+        sanitized = engine._sanitize_state_scene_relation_changes(agent_input=state_input, output=output)
+        sanitized_values = {change.target_path: change.value for change in sanitized.llm_output.changes}
+        self.assertEqual(sanitized_values["char-zhuge_liang-0001.status.liubei_favor.value"], 30)
+        self.assertEqual(sanitized_values["char-zhuge_liang-0001.status.study_meet_rounds.value"], 1)
+
+    def test_state_relation_updates_are_clamped_for_baoyu_scene(self):
+        west_room = MapEntity(
+            id="map-west_room-0004",
+            name="碧纱橱外间",
+            description=Description(public=["碧纱橱外间暖香浮动。"]),
+        )
+        player = CharacterEntity(
+            id="char-player-0000",
+            name="林黛玉",
+            location=west_room.id,
+            attributes={"dexterity": Attribute(id="dexterity", name="敏捷", value=60)},
+        )
+        baoyu = CharacterEntity(
+            id="char-jia_baoyu-0003",
+            name="贾宝玉",
+            location=west_room.id,
+            attributes={"dexterity": Attribute(id="dexterity", name="敏捷", value=40)},
+            status={
+                "daiyu_favor": Status(id="daiyu_favor", name="黛玉好感", value=20, max_value=100, min_value=0),
+                "first_meet_rounds": Status(id="first_meet_rounds", name="初会回合", value=0, max_value=5, min_value=0),
+            },
+        )
+        world = WorldState()
+        world.reset(
+            WorldEntityStore(
+                maps={west_room.id: west_room},
+                characters={player.id: player, baoyu.id: baoyu},
+                items={},
+            )
+        )
+        engine = Engine(world_state=world, mode="phase3", llm_service=FakeLLMService())
+        view = engine.world_provider.precompute_all_views(current_map_id=west_room.id, turn=1).state_agent_view
+        state_input = StateAgentInput(
+            identity=AgentIdentity(id="state", skill="generate state patch"),
+            llm_input=StateAgentLlmInput(
+                source_input=StateSourceInputView(
+                    raw_text="我含笑回礼，轻声答他，也留意那块通灵玉。",
+                    source_id="char-player-0000",
+                    source_kind="player",
+                ),
+                e4=E4EvolutionLlmView(summary="林黛玉与宝玉初会时答话得体，虽惊异却不失分寸。"),
+                world_info=view,
+            ),
+            system_input=StateAgentSystemInput(),
+        )
+        output = StateAgentOutput.model_validate(
+            {
+                "llm_output": {
+                    "changes": [
+                        {
+                            "op": "UPDATE",
+                            "target_path": "char-jia_baoyu-0003.status.daiyu_favor.value",
+                            "value": 90,
+                        },
+                        {
+                            "op": "UPDATE",
+                            "target_path": "char-jia_baoyu-0003.status.first_meet_rounds.value",
+                            "value": 4,
+                        },
+                    ]
+                },
+                "system_output": {"patch_meta": {"trace_id": 3, "turn_id": 1, "retry_seq": 0, "patch_id": "guard-3"}},
+            }
+        )
+
+        sanitized = engine._sanitize_state_scene_relation_changes(agent_input=state_input, output=output)
+        sanitized_values = {change.target_path: change.value for change in sanitized.llm_output.changes}
+        self.assertEqual(sanitized_values["char-jia_baoyu-0003.status.daiyu_favor.value"], 30)
+        self.assertEqual(sanitized_values["char-jia_baoyu-0003.status.first_meet_rounds.value"], 1)
 
     def test_extension_registry_mutable_is_enforced(self):
         world = WorldState()

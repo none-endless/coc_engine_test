@@ -38,6 +38,27 @@ class TestPromptEducationOrientation(unittest.TestCase):
         self.assertIn("可选目标ID（地图或可见角色）", STATE_CHANGE_SYSTEM_PROMPT)
         self.assertIn("不要只在 `description.add` 中描述“物品被拿起/交出/放下”", STATE_CHANGE_SYSTEM_PROMPT)
 
+    def test_state_prompt_mentions_jia_mu_favor_scene_logic(self):
+        self.assertIn("场景关系值：林黛玉到贾府", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("status.daiyu_favor.value", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("status.first_meet_rounds.value", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("UPDATE` 的 `value` 必须是写回后的新数值", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("提高 10", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("达到 55 或以上", STATE_CHANGE_SYSTEM_PROMPT)
+
+    def test_state_prompt_mentions_baoyu_favor_scene_logic(self):
+        self.assertIn("场景关系值：宝玉初会", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("map-west_room-0004", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("char-jia_baoyu-0003", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("未能与宝玉一见如故", STATE_CHANGE_SYSTEM_PROMPT)
+
+    def test_state_prompt_mentions_kongming_favor_scene_logic(self):
+        self.assertIn("场景关系值：三顾茅庐", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("status.liubei_favor.value", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("status.study_meet_rounds.value", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("请孔明出山", STATE_CHANGE_SYSTEM_PROMPT)
+        self.assertIn("未能请出孔明", STATE_CHANGE_SYSTEM_PROMPT)
+
 
 if __name__ == "__main__":
     unittest.main()
