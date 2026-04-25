@@ -1,0 +1,13 @@
+[server]
+port = 8501
+address = "localhost"
+headless = true
+runOnSave = true
+
+[browser]
+serverAddress = "localhost"
+serverPort = 8501
+gatherUsageStats = false
+
+[theme]
+base = "light"

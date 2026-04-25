@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.DS_Store
+
+.test_tmp/
+.tmp/
+.tmp_cfg/
+
+world/log/*.jsonl
+.streamlit/secrets.toml

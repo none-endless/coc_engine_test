@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
+import html
+import mimetypes
 from pathlib import Path
 import threading
 import time
@@ -24,10 +27,25 @@ from main import (
 
 REPO_ROOT = Path(__file__).resolve().parent
 WORLD_DIR = REPO_ROOT / "world"
+BACKGROUND_DIR = REPO_ROOT / "frontend_assets" / "local_backgrounds"
 DEFAULT_CONFIG_PATH = "config/config.yaml"
 STREAM_CHUNK_SIZE = 6
 STREAM_CHUNK_DELAY_SEC = 0.04
 ENGINE_POLL_INTERVAL_SEC = 0.05
+
+SCENE_BACKGROUND_FILES = {
+    "三顾茅庐": {
+        "map-longzhong_path-0001": "optimized/sanguo_cottage_outer.jpg",
+        "map-thatched_courtyard-0002": "optimized/sanguo_cottage_outer.jpg",
+        "map-cottage_study-0003": "optimized/sanguo_cottage_inner.jpg",
+    },
+    "林黛玉到贾府": {
+        "map-rong_gate-0001": "optimized/daiyu_gate.jpg",
+        "map-corridor-0002": "optimized/daiyu_chuihua_gate.jpg",
+        "map-grand_hall-0003": "optimized/daiyu_jiamu_room.jpg",
+        "map-west_room-0004": "optimized/daiyu_jiamu_room.jpg",
+    },
+}
 
 
 @dataclass
@@ -62,37 +80,218 @@ class AppRuntime:
 
 
 def inject_chat_layout_style() -> None:
-    """注入纸质档案风布局样式，固定输入框并优化聊天可读性。"""
+    """注入与参考项目前端一致的浅色舞台风样式。"""
 
     st.markdown(
         """
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=IBM+Plex+Sans+SC:wght@400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
 
         :root {
-            --paper-bg: #efe2c7;
-            --paper-bg-deep: #e2d2b2;
-            --ink: #2f2418;
-            --ink-soft: #5b4a36;
-            --card: rgba(253, 247, 232, 0.88);
-            --card-border: rgba(101, 74, 45, 0.35);
-            --accent: #845a2f;
-            --accent-soft: rgba(132, 90, 47, 0.14);
+            --lab-ink: #2d2219;
+            --lab-muted: #6a4f3b;
+            --lab-line: rgba(72, 52, 36, 0.22);
+            --lab-card: rgba(255, 249, 241, 0.84);
+            --lab-card-strong: rgba(255, 251, 246, 0.92);
+            --lab-side: rgba(246, 241, 233, 0.96);
+            --lab-accent: #7c5335;
+            --lab-accent-deep: #3f594d;
+            --lab-shadow: 0 18px 42px rgba(42, 30, 20, 0.14);
         }
 
-        html, body, [data-testid="stAppViewContainer"] {
+        .stApp {
             background:
-                radial-gradient(circle at 10% 10%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 40%),
-                radial-gradient(circle at 90% 15%, rgba(182, 141, 95, 0.25), rgba(182, 141, 95, 0) 30%),
-                repeating-linear-gradient(
-                    -8deg,
-                    rgba(124, 89, 51, 0.04),
-                    rgba(124, 89, 51, 0.04) 2px,
-                    rgba(255, 255, 255, 0.03) 2px,
-                    rgba(255, 255, 255, 0.03) 6px
-                ),
-                linear-gradient(160deg, var(--paper-bg), var(--paper-bg-deep));
-            color: var(--ink);
+                linear-gradient(180deg, rgba(246, 241, 233, 0.96), rgba(236, 228, 215, 0.98)),
+                radial-gradient(circle at top left, rgba(146, 94, 54, 0.10), transparent 28%),
+                radial-gradient(circle at top right, rgba(63, 89, 77, 0.08), transparent 24%);
+            color: var(--lab-ink);
+        }
+
+        .main .block-container {
+            max-width: 1320px;
+            padding-top: 1.1rem;
+            padding-bottom: 7rem;
+        }
+
+        #MainMenu,
+        footer,
+        header,
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        [data-testid="stDeployButton"] {
+            display: none !important;
+        }
+
+        .stage-shell {
+            position: relative;
+            overflow: hidden;
+            aspect-ratio: 3 / 2;
+            min-height: 520px;
+            border-radius: 20px;
+            border: 1px solid rgba(72, 52, 36, 0.26);
+            box-shadow: 0 12px 28px rgba(42, 30, 20, 0.13);
+            background: linear-gradient(145deg, rgba(56, 40, 28, 0.94), rgba(28, 20, 14, 0.97));
+            margin-bottom: 0.9rem;
+            contain: layout paint;
+        }
+
+        .stage-bg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center 42%;
+            transform: none;
+            filter: none;
+        }
+
+        .stage-fallback {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #f8ede0;
+            background:
+                radial-gradient(circle at top, rgba(255, 225, 189, 0.21), transparent 36%),
+                linear-gradient(135deg, rgba(122, 82, 49, 0.92), rgba(51, 36, 24, 0.98));
+            font-size: 1.05rem;
+        }
+
+        .stage-mask {
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(180deg, rgba(16, 11, 8, 0.24) 0%, rgba(16, 11, 8, 0.10) 38%, rgba(16, 11, 8, 0.66) 100%);
+        }
+
+        .stage-overlay {
+            position: absolute;
+            inset: 0.95rem 0.95rem 0.45rem;
+            z-index: 3;
+            display: grid;
+            grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.22fr) minmax(240px, 1fr);
+            grid-template-rows: auto auto 1fr auto;
+            column-gap: 0.8rem;
+            row-gap: 0.62rem;
+            align-items: start;
+        }
+
+        .glass {
+            border: 1px solid rgba(64, 47, 34, 0.28);
+            border-radius: 12px;
+            background: rgba(255, 249, 241, 0.90);
+            backdrop-filter: none;
+            padding: 0.64rem 0.8rem;
+            color: var(--lab-ink);
+            box-shadow: 0 4px 10px rgba(27, 18, 12, 0.10);
+        }
+
+        .stage-card-scene {
+            grid-column: 1;
+            grid-row: 1;
+        }
+
+        .stage-card-exits {
+            grid-column: 3;
+            grid-row: 1;
+        }
+
+        .stage-card-npcs {
+            grid-column: 1;
+            grid-row: 2;
+        }
+
+        .stage-card-items {
+            grid-column: 3;
+            grid-row: 2;
+        }
+
+        .stage-card-story {
+            grid-column: 1 / -1;
+            grid-row: 4;
+            align-self: end;
+            justify-self: center;
+            width: min(980px, 94%);
+            max-width: 980px;
+        }
+
+        .glass h3 {
+            margin: 0 0 0.3rem;
+            color: var(--lab-ink);
+            font-size: 1.08rem;
+            line-height: 1.35;
+        }
+
+        .eyeline {
+            margin: 0 0 0.34rem;
+            color: var(--lab-muted);
+            font-size: 0.74rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .scene-meta {
+            margin: 0 0 0.3rem;
+            color: #4f3d2e;
+            font-size: 0.84rem;
+        }
+
+        .scene-text {
+            margin: 0;
+            line-height: 1.58;
+        }
+
+        .pill-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.38rem;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            border: 1px solid rgba(97, 74, 55, 0.30);
+            background: rgba(255, 255, 255, 0.62);
+            padding: 0.2rem 0.5rem;
+            font-size: 0.84rem;
+            color: #3a2d23;
+        }
+
+        .action-heading {
+            margin-top: 0.35rem;
+            margin-bottom: 0.15rem;
+            color: var(--lab-ink);
+            font-size: 1.18rem;
+            font-weight: 700;
+        }
+
+        .action-panel {
+            border: 1px solid rgba(85, 63, 46, 0.18);
+            border-radius: 14px;
+            background: rgba(255, 249, 241, 0.92);
+            box-shadow: 0 4px 10px rgba(27, 18, 12, 0.06);
+            padding: 0.75rem 0.85rem 0.55rem;
+            margin-bottom: 0.8rem;
+        }
+
+        div[data-testid="stForm"] {
+            border: 1px solid rgba(85, 63, 46, 0.18);
+            border-radius: 14px;
+            background: rgba(255, 249, 241, 0.92);
+            box-shadow: 0 4px 10px rgba(27, 18, 12, 0.06);
+            padding: 0.75rem 0.85rem 0.55rem;
+            margin-bottom: 0.35rem;
+        }
+
+        .action-helper {
+            margin-top: 0.28rem;
+            color: var(--lab-muted);
+            font-size: 0.88rem;
         }
 
         [data-testid="stAppViewContainer"],
@@ -105,7 +304,7 @@ def inject_chat_layout_style() -> None:
         [data-testid="stAppViewContainer"] div[data-testid="stMarkdownContainer"] code,
         [data-testid="stSidebar"] label,
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {
-            font-family: 'IBM Plex Sans SC', 'Microsoft YaHei UI', sans-serif;
+            font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
         }
 
         /*
@@ -160,75 +359,217 @@ def inject_chat_layout_style() -> None:
         [data-testid="stAppViewContainer"] h1,
         [data-testid="stAppViewContainer"] h2,
         [data-testid="stAppViewContainer"] h3 {
-            font-family: 'Noto Serif SC', 'STSong', serif;
-            letter-spacing: 0.02em;
-            color: var(--ink);
+            font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+            letter-spacing: 0;
+            color: var(--lab-ink);
+        }
+
+        [data-testid="stAppViewContainer"] h1 {
+            margin: 0 0 0.35rem;
+            font-size: clamp(1.75rem, 2.1vw, 2.35rem);
+            font-weight: 700;
+        }
+
+        [data-testid="stAppViewContainer"] h2,
+        [data-testid="stAppViewContainer"] h3 {
+            font-weight: 700;
         }
 
         [data-testid="stSidebar"] {
-            background: rgba(248, 239, 220, 0.88);
-            border-right: 1px solid rgba(90, 68, 46, 0.22);
+            background:
+                linear-gradient(180deg, rgba(248, 243, 235, 0.98), rgba(235, 226, 213, 0.96));
+            border-right: 1px solid var(--lab-line);
+            box-shadow: 6px 0 16px rgba(42, 30, 20, 0.05);
         }
 
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
         [data-testid="stSidebar"] label {
-            color: var(--ink-soft);
+            color: var(--lab-muted);
+        }
+
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] strong {
+            color: var(--lab-ink);
+        }
+
+        [data-testid="stSidebar"] hr {
+            border-color: rgba(72, 52, 36, 0.16);
+        }
+
+        [data-testid="stTabs"] button {
+            color: var(--lab-muted);
+            font-weight: 600;
+        }
+
+        [data-testid="stTabs"] button[aria-selected="true"] {
+            color: var(--lab-ink);
+        }
+
+        [data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+            background-color: var(--lab-accent);
+        }
+
+        [data-testid="stMetric"],
+        div[data-testid="stExpander"],
+        div[data-testid="stJson"],
+        div[data-testid="stDataFrame"],
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            border-radius: 14px;
+        }
+
+        [data-testid="stMetric"] {
+            border: 1px solid rgba(85, 63, 46, 0.16);
+            background: var(--lab-card);
+            box-shadow: 0 4px 10px rgba(27, 18, 12, 0.06);
+            padding: 0.65rem 0.75rem;
         }
 
         div[data-testid="stChatMessage"] {
-            background: var(--card);
-            border: 1px solid var(--card-border);
+            background: rgba(255, 251, 246, 0.80);
+            border: 1px solid rgba(95, 71, 52, 0.14);
             border-radius: 14px;
-            box-shadow: 0 8px 20px rgba(58, 37, 17, 0.08);
-            padding: 0.55rem 0.9rem;
-            margin-bottom: 0.75rem;
-            animation: paperIn 220ms ease-out;
+            box-shadow: 0 4px 10px rgba(27, 18, 12, 0.07);
+            padding: 0.35rem 0.55rem;
+            margin-bottom: 0.62rem;
+            color: var(--lab-ink);
+            animation: labMessageIn 180ms ease-out;
+            contain: layout paint;
         }
 
         div[data-testid="stChatMessage"][aria-label="Chat message from user"] {
-            background: rgba(238, 219, 183, 0.9);
-            border-color: rgba(117, 84, 47, 0.45);
+            background: rgba(255, 249, 241, 0.92);
+            border-color: rgba(124, 83, 53, 0.28);
         }
 
         div[data-testid="stChatMessage"] p {
-            color: var(--ink);
+            color: var(--lab-ink);
             line-height: 1.7;
         }
 
         div[data-testid="stExpander"] {
-            border: 1px dashed rgba(117, 84, 47, 0.45);
-            border-radius: 10px;
-            background: rgba(255, 252, 245, 0.6);
+            border: 1px solid rgba(85, 63, 46, 0.18);
+            border-radius: 14px;
+            background: var(--lab-card);
+            box-shadow: 0 4px 10px rgba(27, 18, 12, 0.06);
         }
 
-        div[data-testid="stChatInput"] {
-            position: fixed;
-            bottom: 0.8rem;
-            left: max(1rem, calc((100vw - 1200px) / 2));
-            right: max(1rem, calc((100vw - 1200px) / 2));
-            z-index: 999;
-            background: rgba(246, 236, 214, 0.96);
-            backdrop-filter: blur(6px);
-            border: 1px solid rgba(117, 84, 47, 0.35);
-            border-radius: 12px;
-            box-shadow: 0 8px 18px rgba(80, 54, 29, 0.14);
-            padding: 0.45rem 0.5rem 0.2rem;
-        }
-
-        div[data-testid="stChatInput"] textarea {
-            color: var(--ink) !important;
+        div[data-testid="stExpander"] summary {
+            color: var(--lab-ink);
+            font-weight: 600;
         }
 
         div[data-testid="stAlert"] {
+            border-radius: 12px;
+            border: 1px solid rgba(117, 84, 47, 0.22);
+            box-shadow: 0 3px 8px rgba(27, 18, 12, 0.05);
+        }
+
+        div[data-testid="stInfo"] {
+            background: rgba(255, 249, 241, 0.78);
+        }
+
+        div[data-testid="stSpinner"] {
+            color: var(--lab-muted);
+        }
+
+        div[data-testid="stCaptionContainer"],
+        div[data-testid="stCaptionContainer"] p {
+            color: var(--lab-muted);
+        }
+
+        [data-testid="stWidgetLabel"] p,
+        [data-testid="stMarkdownContainer"] small {
+            color: var(--lab-muted);
+        }
+
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="input"] > div,
+        div[data-baseweb="textarea"] textarea,
+        div[data-baseweb="base-input"] input,
+        input,
+        textarea {
+            background: rgba(255, 251, 246, 0.88) !important;
+            border-color: rgba(95, 71, 52, 0.22) !important;
+            color: var(--lab-ink) !important;
+        }
+
+        div[data-baseweb="select"] > div:hover,
+        div[data-baseweb="input"] > div:hover,
+        textarea:hover {
+            border-color: rgba(124, 83, 53, 0.36) !important;
+        }
+
+        button[kind="primary"],
+        div[data-testid="stButton"] button[kind="primary"] {
+            background: linear-gradient(135deg, #7c5335, #3f594d) !important;
+            border: 1px solid rgba(63, 89, 77, 0.28) !important;
+            color: #fff8ef !important;
+            box-shadow: 0 5px 12px rgba(63, 89, 77, 0.14);
+        }
+
+        div[data-testid="stButton"] button,
+        button[kind="secondary"] {
             border-radius: 10px;
-            border: 1px solid rgba(117, 84, 47, 0.3);
+            border: 1px solid rgba(85, 63, 46, 0.20);
+            background: rgba(255, 249, 241, 0.82);
+            color: var(--lab-ink);
+            font-weight: 600;
+        }
+
+        div[data-testid="stButton"] button:hover,
+        button[kind="secondary"]:hover {
+            border-color: rgba(124, 83, 53, 0.38);
+            background: rgba(255, 251, 246, 0.96);
+            color: var(--lab-ink);
+        }
+
+        div[data-testid="stJson"] {
+            border: 1px solid rgba(85, 63, 46, 0.16);
+            background: rgba(255, 251, 246, 0.72);
+        }
+
+        code,
+        pre {
+            background: rgba(255, 251, 246, 0.70) !important;
+            color: #463326 !important;
+            border-radius: 8px;
+        }
+
+        a {
+            color: var(--lab-accent-deep);
+        }
+
+        ::selection {
+            background: rgba(124, 83, 53, 0.22);
         }
 
         @media (max-width: 768px) {
-            div[data-testid="stChatInput"] {
-                left: 0.4rem;
-                right: 0.4rem;
-                bottom: 0.4rem;
+            .main .block-container {
+                padding-left: 0.85rem;
+                padding-right: 0.85rem;
+            }
+
+            .stage-shell {
+                min-height: 700px;
+            }
+
+            .stage-overlay {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto auto auto;
+                inset: 0.65rem;
+            }
+
+            .stage-card-scene,
+            .stage-card-exits,
+            .stage-card-npcs,
+            .stage-card-items,
+            .stage-card-story {
+                grid-column: 1;
+                grid-row: auto;
+                width: auto;
+                max-width: none;
             }
 
             div[data-testid="stChatMessage"] {
@@ -236,14 +577,10 @@ def inject_chat_layout_style() -> None:
             }
         }
 
-        div[data-testid="stAppViewContainer"] .main {
-            padding-bottom: 6rem;
-        }
-
-        @keyframes paperIn {
+        @keyframes labMessageIn {
             from {
                 opacity: 0;
-                transform: translateY(8px);
+                transform: translateY(6px);
             }
             to {
                 opacity: 1;
@@ -296,6 +633,140 @@ def read_world_preview(world_path: str) -> Dict[str, Any]:
         "turn_limit": bundle.turn_limit,
         "ending_count": len(bundle.endings),
     }
+
+
+@st.cache_data(show_spinner=False)
+def build_image_data_uri(path_str: str) -> str:
+    """把本地场景图转成可直接嵌入 HTML 的 data URI。"""
+
+    path = Path(path_str)
+    if not path.exists() or not path.is_file():
+        return ""
+
+    mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def escape_html_text(value: Any) -> str:
+    return html.escape(str(value or ""))
+
+
+def format_html_text(value: Any) -> str:
+    return escape_html_text(value).replace("\n", "<br>")
+
+
+def description_public_text(entity: Any) -> str:
+    description = getattr(entity, "description", None)
+    public = getattr(description, "public", None)
+    if isinstance(public, list):
+        return "\n".join(str(item) for item in public if str(item).strip())
+    if public:
+        return str(public)
+    return str(description or "")
+
+
+def scene_background_uri(world_name: str, map_id: str) -> str:
+    file_name = SCENE_BACKGROUND_FILES.get(world_name, {}).get(map_id)
+    if not file_name:
+        file_name = "_fallback_default.svg"
+
+    path = BACKGROUND_DIR / file_name
+    if not path.exists():
+        path = BACKGROUND_DIR / "_fallback_default.svg"
+    return build_image_data_uri(str(path)) if path.exists() else ""
+
+
+def pill_markup(values: List[str], empty_text: str) -> str:
+    clean_values = [str(value).strip() for value in values if str(value).strip()]
+    if not clean_values:
+        return f"<span class='pill'>{escape_html_text(empty_text)}</span>"
+    return "".join(f"<span class='pill'>{escape_html_text(value)}</span>" for value in clean_values)
+
+
+def latest_story_text(runtime: AppRuntime, fallback_text: str) -> tuple[str, str]:
+    if runtime.game_over and runtime.ending_text:
+        return "结局", runtime.ending_text
+
+    for message in reversed(st.session_state.chat_history):
+        if message.get("role") != "assistant":
+            continue
+        content = str(message.get("content", "")).strip()
+        if content:
+            return "剧情", content
+
+    return "场景提示", fallback_text
+
+
+def presentation_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.startswith("回合执行失败:"):
+        return "剧情生成暂时失败，请稍后重试或检查模型配置。"
+    return text
+
+
+def render_stage_panel(runtime: AppRuntime) -> None:
+    """渲染参考项目同款场景舞台，不参与后端状态计算。"""
+
+    actor = runtime.engine.world_state.get_character(runtime.actor_id)
+    current_map = runtime.engine.world_state.get_map(actor.location)
+    scene_text = description_public_text(current_map)
+    speaker, dialogue_text = latest_story_text(runtime, scene_text)
+    dialogue_text = presentation_text(dialogue_text)
+    bg_uri = scene_background_uri(runtime.world_name, current_map.id)
+
+    characters = [
+        getattr(item, "name", str(item))
+        for item in runtime.engine.world_state.get_characters_at(actor.location)
+        if getattr(item, "id", "") != runtime.actor_id
+    ]
+    items = [getattr(item, "name", str(item)) for item in runtime.engine.world_state.get_items_at(actor.location)]
+
+    exit_labels: List[str] = []
+    for connection in getattr(current_map, "connections", []) or []:
+        direction = str(getattr(connection, "direction", "") or getattr(connection, "name", "") or "出口")
+        description = str(getattr(connection, "description", "") or getattr(connection, "target_map_id", "") or "")
+        exit_labels.append(f"{direction} · {description}" if description else direction)
+
+    image_markup = (
+        f'<img class="stage-bg" src="{html.escape(bg_uri)}" alt="scene" decoding="async" draggable="false">'
+        if bg_uri
+        else '<div class="stage-fallback">背景图未加载</div>'
+    )
+
+    stage_markup = "".join(
+        [
+            '<div class="stage-shell">',
+            image_markup,
+            '<div class="stage-mask"></div>',
+            '<div class="stage-overlay">',
+            '<section class="glass stage-card-scene">',
+            '<div class="eyeline">当前场景</div>',
+            f"<h3>{escape_html_text(current_map.name)}</h3>",
+            f'<div class="scene-meta">回合 {runtime.turn_id} · 玩家 {escape_html_text(actor.name)}</div>',
+            f'<p class="scene-text">{format_html_text(scene_text)}</p>',
+            "</section>",
+            '<section class="glass stage-card-exits">',
+            '<div class="eyeline">可通往地点</div>',
+            f'<div class="pill-wrap">{pill_markup(exit_labels, "当前没有可通往地点")}</div>',
+            "</section>",
+            '<section class="glass stage-card-npcs">',
+            '<div class="eyeline">在场角色</div>',
+            f'<div class="pill-wrap">{pill_markup(characters, "当前没有其他在场角色")}</div>',
+            "</section>",
+            '<section class="glass stage-card-items">',
+            '<div class="eyeline">可见物品</div>',
+            f'<div class="pill-wrap">{pill_markup(items, "当前没有可见物品")}</div>',
+            "</section>",
+            '<section class="glass stage-card-story">',
+            f'<div class="eyeline">{escape_html_text(speaker)}</div>',
+            f'<p class="scene-text">{format_html_text(dialogue_text)}</p>',
+            "</section>",
+            "</div>",
+            "</div>",
+        ]
+    )
+    st.html(stage_markup)
 
 
 def ensure_session_state() -> None:
@@ -680,7 +1151,7 @@ def group_agent_records(turn_record: Dict[str, Any]) -> Dict[str, List[Dict[str,
 def render_sidebar() -> Dict[str, Any]:
     """渲染侧栏配置并返回当前设置。"""
 
-    st.sidebar.header("游玩与配置")
+    st.sidebar.title("AI阅读实验室")
 
     worlds = list_world_dirs(str(WORLD_DIR))
     if not worlds:
@@ -688,46 +1159,40 @@ def render_sidebar() -> Dict[str, Any]:
         return {"can_run": False}
 
     default_world = DEFAULT_WORLD_DIR.name if DEFAULT_WORLD_DIR.name in worlds else worlds[0]
-    selected_world = st.sidebar.selectbox("世界选择", options=worlds, index=worlds.index(default_world))
-    preview = read_world_preview(str(WORLD_DIR / selected_world))
-    st.sidebar.caption(f"场景: {preview['scene_name']}")
-    st.sidebar.caption(f"默认角色: {preview['default_actor_id']}")
-    st.sidebar.caption(f"结局数: {preview['ending_count']}")
+    runtime = st.session_state.get("runtime")
+    current_world = getattr(runtime, "world_name", default_world)
+    if current_world not in worlds:
+        current_world = default_world
 
-    mode = st.sidebar.selectbox("运行模式", options=["unified-main"], index=0)
-    use_real_llm = st.sidebar.checkbox("使用真实 LLM", value=True)
+    selected_world = st.sidebar.selectbox(
+        "世界",
+        options=worlds,
+        index=worlds.index(current_world),
+    )
 
-    config_path = st.sidebar.text_input("配置文件路径", value=DEFAULT_CONFIG_PATH)
-
-    st.sidebar.subheader("LLM 参数")
-    api_key = st.sidebar.text_input("API Key(可覆盖配置)", value="", type="password")
-    api_base = st.sidebar.text_input("API Base(可覆盖配置)", value="")
-    model = st.sidebar.text_input("模型名(可覆盖配置)", value="")
-    enable_reasoning = st.sidebar.checkbox("启用推理", value=False)
-    temperature = st.sidebar.slider("temperature", min_value=0.0, max_value=2.0, value=0.7, step=0.1)
-    max_tokens = st.sidebar.number_input("max_tokens", min_value=100, max_value=8192, value=3000, step=100)
-    timeout = st.sidebar.number_input("timeout(秒)", min_value=1, max_value=120, value=30, step=1)
-
-    debug_mode = st.sidebar.checkbox("开启 Debug UI", value=True)
-
+    st.sidebar.markdown("---")
     col_left, col_right = st.sidebar.columns(2)
-    rebuild_clicked = col_left.button("重建引擎", use_container_width=True)
-    clear_chat_clicked = col_right.button("清空聊天", use_container_width=True)
+    rebuild_clicked = col_left.button("重新开始", use_container_width=True)
+    clear_chat_clicked = col_right.button("清空剧情", use_container_width=True)
+
+    preview = read_world_preview(str(WORLD_DIR / selected_world))
+    if preview.get("turn_limit") is not None:
+        st.sidebar.caption(f"回合上限：{preview['turn_limit']}")
 
     return {
         "can_run": True,
         "world_name": selected_world,
-        "mode": mode,
-        "use_real_llm": use_real_llm,
-        "config_path": config_path,
-        "api_key": api_key,
-        "api_base": api_base,
-        "model": model,
-        "enable_reasoning": enable_reasoning,
-        "temperature": float(temperature),
-        "max_tokens": int(max_tokens),
-        "timeout": int(timeout),
-        "debug_mode": debug_mode,
+        "mode": "unified-main",
+        "use_real_llm": True,
+        "config_path": DEFAULT_CONFIG_PATH,
+        "api_key": "",
+        "api_base": "",
+        "model": "",
+        "enable_reasoning": False,
+        "temperature": 0.7,
+        "max_tokens": 3000,
+        "timeout": 30,
+        "debug_mode": False,
         "rebuild_clicked": rebuild_clicked,
         "clear_chat_clicked": clear_chat_clicked,
     }
@@ -738,18 +1203,9 @@ def render_chat_history() -> None:
 
     for message in st.session_state.chat_history:
         role = message.get("role", "assistant")
-        content = str(message.get("content", ""))
-        meta = message.get("meta", {}) if isinstance(message.get("meta"), dict) else {}
+        content = presentation_text(message.get("content", ""))
         with st.chat_message(role):
             st.markdown(content)
-            if role == "assistant" and meta:
-                merger_text = str(meta.get("merger_text", "")).strip()
-                if merger_text and merger_text != content.strip():
-                    with st.expander("查看 merger 压缩结果", expanded=False):
-                        st.markdown(merger_text)
-                st.caption(f"trace_id={meta.get('trace_id')} | turn_id={meta.get('turn_id')} | route={meta.get('route')}")
-
-
 def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
     """执行单回合并把结果写入聊天与调试记录。"""
 
@@ -796,8 +1252,6 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
         return
 
     st.session_state.chat_history.append({"role": "user", "content": user_text, "meta": {}})
-    with st.chat_message("user"):
-        st.markdown(user_text)
 
     io_start = len(runtime.io_records)
     with runtime.narrative_event_lock:
@@ -820,89 +1274,20 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
     worker = threading.Thread(target=_run_turn_worker, daemon=True)
     worker.start()
 
-    stream_preview_placeholder = st.empty()
-    status_placeholder = st.empty()
-    live_fragments: Dict[str, Dict[str, Any]] = {}
-    live_fragment_order: List[str] = []
-
-    def apply_narrative_event(event: Dict[str, Any]) -> None:
-        if not isinstance(event, dict):
-            return
-        event_name = str(event.get("event", ""))
-        if not event_name.startswith("narrative.fragment."):
-            return
-        data = event.get("data", {})
-        if not isinstance(data, dict):
-            return
-
-        fragment_id = str(data.get("fragment_id", "")).strip()
-        if not fragment_id:
-            return
-
-        if fragment_id not in live_fragments:
-            live_fragments[fragment_id] = {
-                "source_kind": str(data.get("source_kind", "")),
-                "source_id": str(data.get("source_id", "")),
-                "content": "",
-                "completed": False,
-            }
-            live_fragment_order.append(fragment_id)
-
-        if event_name == "narrative.fragment.delta":
-            live_fragments[fragment_id]["content"] += str(data.get("delta", ""))
-        elif event_name == "narrative.fragment.completed":
-            completed_text = str(data.get("content", "")).strip()
-            if completed_text:
-                live_fragments[fragment_id]["content"] = completed_text
-            live_fragments[fragment_id]["completed"] = True
-
-    def render_live_fragments() -> None:
-        with stream_preview_placeholder.container():
-            for fragment_id in live_fragment_order:
-                fragment = live_fragments.get(fragment_id, {})
-                source_kind = str(fragment.get("source_kind", ""))
-                source_id = str(fragment.get("source_id", ""))
-                content = str(fragment.get("content", ""))
-                completed = bool(fragment.get("completed", False))
-
-                if source_kind == "player":
-                    title = "玩家叙事"
-                elif source_kind == "npc":
-                    title = f"NPC {source_id} 叙事"
-                else:
-                    title = "叙事片段"
-
-                with st.chat_message("assistant"):
-                    st.caption(f"{title} · {'已完成' if completed else '流式生成中'}")
-                    st.markdown(content or "...")
+    progress_placeholder = st.empty()
+    progress_placeholder.info("正在生成剧情...")
 
     while worker.is_alive():
-        new_events, narrative_cursor = collect_narrative_events(runtime, narrative_cursor)
-        for event in new_events:
-            apply_narrative_event(event)
-
-        if live_fragment_order:
-            render_live_fragments()
-            status_placeholder.caption("narrative_agent 流式输出中...")
-        else:
-            status_placeholder.caption("正在处理主链路...")
-
+        _, narrative_cursor = collect_narrative_events(runtime, narrative_cursor)
         time.sleep(runtime.engine_poll_interval_sec)
 
     worker.join()
-    trailing_events, narrative_cursor = collect_narrative_events(runtime, narrative_cursor)
-    for event in trailing_events:
-        apply_narrative_event(event)
-    if live_fragment_order:
-        render_live_fragments()
-    status_placeholder.empty()
+    collect_narrative_events(runtime, narrative_cursor)
+    progress_placeholder.empty()
 
     if result_holder.get("error") is not None:
         exc = result_holder["error"]
-        error_text = f"回合执行失败: {exc}"
-        stream_preview_placeholder.empty()
-        with st.chat_message("assistant"):
-            st.error(error_text)
+        error_text = "剧情生成暂时失败，请稍后重试或检查模型配置。"
         st.session_state.chat_history.append(
             {
                 "role": "assistant",
@@ -911,6 +1296,7 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
                     "trace_id": runtime.trace_id,
                     "turn_id": runtime.turn_id,
                     "route": "exception",
+                    "error": str(exc),
                 },
             }
         )
@@ -930,6 +1316,7 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
             }
         )
         st.session_state.debug_turn_idx = max(len(runtime.turn_records) - 1, 0)
+        st.rerun()
         return
 
     result = result_holder.get("result") if isinstance(result_holder.get("result"), dict) else {}
@@ -945,22 +1332,8 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
 
     visible = extract_player_visible_output(result)
     display_text = str(visible.get("text", ""))
-    merger_text = str(visible.get("merger_text", "")).strip()
     fragments = visible.get("fragments", []) if isinstance(visible.get("fragments"), list) else []
     aggregated_raw = str(visible.get("aggregated_raw", "")).strip()
-
-    stream_preview_placeholder.empty()
-    with st.chat_message("assistant"):
-        st.caption(str(visible.get("title", "系统输出")))
-        st.markdown(display_text)
-        if merger_text and merger_text != display_text.strip():
-            with st.expander("查看 merger 压缩结果", expanded=False):
-                st.markdown(merger_text)
-        st.caption(
-            f"trace_id={turn_record.get('trace_id')} | "
-            f"turn_id={turn_record.get('turn_id')} | "
-            f"route={turn_record.get('route')}"
-        )
 
     st.session_state.chat_history.append(
         {
@@ -970,7 +1343,6 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
                 "trace_id": turn_record.get("trace_id"),
                 "turn_id": turn_record.get("turn_id"),
                 "route": turn_record.get("route"),
-                "merger_text": merger_text,
                 "aggregated_raw": aggregated_raw,
                 "fragments": fragments,
             },
@@ -981,6 +1353,7 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
     runtime.trace_id += runtime.trace_id_step
     runtime.causality_chain = E7CausalityChain()
     st.session_state.debug_turn_idx = max(len(runtime.turn_records) - 1, 0)
+    st.rerun()
 
 
 def render_turn_navigator(runtime: AppRuntime) -> Optional[Dict[str, Any]]:
@@ -1118,12 +1491,39 @@ def render_runtime_banner(runtime: AppRuntime) -> None:
         st.success(f"当前已达成结局: {runtime.ending_text}")
 
 
+def render_action_input_panel(runtime: AppRuntime) -> Optional[str]:
+    """在场景图下方渲染固定位置的输入面板。"""
+
+    disabled = bool(runtime.game_over)
+    with st.form("action-input-form", clear_on_submit=True):
+        input_col, submit_col = st.columns([0.86, 0.14], gap="small")
+        with input_col:
+            user_text = st.text_input(
+                "输入你的行动",
+                value="",
+                placeholder="例如：我检查书桌抽屉",
+                label_visibility="collapsed",
+                disabled=disabled,
+            )
+        with submit_col:
+            submitted = st.form_submit_button(
+                "发送",
+                use_container_width=True,
+                type="primary",
+                disabled=disabled,
+            )
+    st.markdown("<div class='action-helper'>可直接输入自然语言行动，例如：去东边看看、我沿山道前往草庐。</div>", unsafe_allow_html=True)
+
+    if submitted and user_text.strip():
+        return user_text.strip()
+    return None
+
+
 def main() -> None:
     """应用入口。"""
 
-    st.set_page_config(page_title="Engine Play & Debug UI", layout="wide")
+    st.set_page_config(page_title="AI阅读实验室", layout="wide")
     inject_chat_layout_style()
-    st.title("LLM 文字冒险引擎 ")
 
     ensure_session_state()
     sidebar_state = render_sidebar()
@@ -1133,11 +1533,17 @@ def main() -> None:
     if sidebar_state.get("clear_chat_clicked"):
         st.session_state.chat_history = []
 
-    should_build = sidebar_state.get("rebuild_clicked") or st.session_state.runtime is None
+    selected_world = str(sidebar_state["world_name"])
+    current_runtime = st.session_state.runtime
+    should_build = (
+        sidebar_state.get("rebuild_clicked")
+        or current_runtime is None
+        or getattr(current_runtime, "world_name", selected_world) != selected_world
+    )
     if should_build:
         with st.spinner("正在初始化引擎..."):
             st.session_state.runtime = build_runtime(
-                world_name=str(sidebar_state["world_name"]),
+                world_name=selected_world,
                 mode=str(sidebar_state["mode"]),
                 use_real_llm=bool(sidebar_state["use_real_llm"]),
                 config_path=str(sidebar_state["config_path"]),
@@ -1154,23 +1560,23 @@ def main() -> None:
             st.session_state.debug_agent_name = ""
 
     runtime: AppRuntime = st.session_state.runtime
-    render_runtime_banner(runtime)
 
-    game_tab, debug_tab = st.tabs(["游玩", "Debug"])
+    render_stage_panel(runtime)
+    st.markdown("<div class='action-heading'>行动输入</div>", unsafe_allow_html=True)
+    user_text = render_action_input_panel(runtime)
+    if user_text:
+        handle_user_turn(runtime, user_text.strip())
 
-    with game_tab:
-        st.caption("可用快捷命令: \\look 查看环境, \\inventory 查看背包")
-        render_chat_history()
-        user_text = st.chat_input("输入玩家行为，例如: 我调查桌上的笔记")
-        if user_text:
-            handle_user_turn(runtime, user_text.strip())
+    if st.session_state.chat_history:
+        with st.expander("剧情记录", expanded=False):
+            render_chat_history()
+
+    if runtime.game_over:
+        st.warning("游戏已经结束。你可以在侧栏重新开始。")
 
     if sidebar_state.get("debug_mode"):
-        with debug_tab:
+        with st.expander("Debug", expanded=False):
             render_debug_panel(runtime)
-    else:
-        with debug_tab:
-            st.info("Debug 模式未开启，请在侧栏勾选开启。")
 
 
 if __name__ == "__main__":

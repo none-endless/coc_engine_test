@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import ssl
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, Iterator, Optional, Type, TypeVar
@@ -9,6 +10,11 @@ from urllib import request
 from urllib.error import HTTPError, URLError
 
 from pydantic import BaseModel, ValidationError
+
+try:
+    import certifi
+except ImportError:  # pragma: no cover - certifi is installed in the app venv.
+    certifi = None
 
 from src.config.loader import EngineConfig, LlmConfig
 
@@ -446,7 +452,7 @@ class LLMServiceBase:
     def _default_transport(url: str, headers: Dict[str, str], body: Dict[str, Any], timeout_seconds: int) -> Dict[str, Any]:
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         req = request.Request(url=url, data=data, headers=headers, method="POST")
-        with request.urlopen(req, timeout=timeout_seconds) as resp:
+        with request.urlopen(req, timeout=timeout_seconds, context=LLMServiceBase._default_ssl_context()) as resp:
             raw = resp.read().decode("utf-8")
             parsed = json.loads(raw)
             if not isinstance(parsed, dict):
@@ -462,8 +468,14 @@ class LLMServiceBase:
     ) -> Iterator[str]:
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         req = request.Request(url=url, data=data, headers=headers, method="POST")
-        with request.urlopen(req, timeout=timeout_seconds) as resp:
+        with request.urlopen(req, timeout=timeout_seconds, context=LLMServiceBase._default_ssl_context()) as resp:
             for raw_line in resp:
                 if not raw_line:
                     continue
                 yield raw_line.decode("utf-8", errors="ignore")
+
+    @staticmethod
+    def _default_ssl_context() -> ssl.SSLContext:
+        if certifi is None:
+            return ssl.create_default_context()
+        return ssl.create_default_context(cafile=certifi.where())
