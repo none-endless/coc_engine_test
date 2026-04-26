@@ -126,13 +126,13 @@ def inject_chat_layout_style() -> None:
         .stage-shell {
             position: relative;
             overflow: hidden;
-            aspect-ratio: 3 / 2;
-            min-height: 520px;
+            aspect-ratio: 16 / 9;
+            min-height: 400px;
             border-radius: 20px;
             border: 1px solid rgba(72, 52, 36, 0.26);
             box-shadow: 0 12px 28px rgba(42, 30, 20, 0.13);
             background: linear-gradient(145deg, rgba(56, 40, 28, 0.94), rgba(28, 20, 14, 0.97));
-            margin-bottom: 0.9rem;
+            margin-bottom: 0.7rem;
             contain: layout paint;
         }
 
@@ -173,7 +173,7 @@ def inject_chat_layout_style() -> None:
             z-index: 3;
             display: grid;
             grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.22fr) minmax(240px, 1fr);
-            grid-template-rows: auto auto 1fr auto;
+            grid-template-rows: auto auto 1fr;
             column-gap: 0.8rem;
             row-gap: 0.62rem;
             align-items: start;
@@ -207,15 +207,6 @@ def inject_chat_layout_style() -> None:
         .stage-card-items {
             grid-column: 3;
             grid-row: 2;
-        }
-
-        .stage-card-story {
-            grid-column: 1 / -1;
-            grid-row: 4;
-            align-self: end;
-            justify-self: center;
-            width: min(980px, 94%);
-            max-width: 980px;
         }
 
         .glass h3 {
@@ -262,6 +253,32 @@ def inject_chat_layout_style() -> None:
             color: #3a2d23;
         }
 
+        .sidebar-panel {
+            margin-top: 0.55rem;
+            padding: 0.68rem 0.75rem;
+        }
+
+        .sidebar-panel .pill-wrap {
+            gap: 0.34rem;
+        }
+
+        .sidebar-panel .pill {
+            font-size: 0.8rem;
+            padding: 0.18rem 0.46rem;
+        }
+
+        .plain-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.42rem;
+        }
+
+        .plain-line {
+            color: #3a2d23;
+            font-size: 0.83rem;
+            line-height: 1.55;
+        }
+
         .action-heading {
             margin-top: 0.35rem;
             margin-bottom: 0.15rem;
@@ -292,6 +309,31 @@ def inject_chat_layout_style() -> None:
             margin-top: 0.28rem;
             color: var(--lab-muted);
             font-size: 0.88rem;
+        }
+
+        .live-story-shell {
+            margin: 0.85rem 0 0.55rem;
+            padding: 0.78rem 0.9rem 0.82rem;
+        }
+
+        .live-story-shell.live-story-pending {
+            color: var(--lab-muted);
+        }
+
+        .live-story-label {
+            margin: 0 0 0.38rem;
+            color: var(--lab-muted);
+            font-size: 0.74rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .live-story-body {
+            min-height: 2.3rem;
+            color: var(--lab-ink);
+            font-size: 1rem;
+            line-height: 1.72;
         }
 
         [data-testid="stAppViewContainer"],
@@ -460,6 +502,12 @@ def inject_chat_layout_style() -> None:
             font-weight: 600;
         }
 
+        [data-testid="stSidebar"] div[data-testid="stExpanderDetails"] {
+            padding-top: 0.5rem;
+            padding-bottom: 1rem;
+            min-height: 4.5rem;
+        }
+
         div[data-testid="stAlert"] {
             border-radius: 12px;
             border: 1px solid rgba(117, 84, 47, 0.22);
@@ -552,20 +600,20 @@ def inject_chat_layout_style() -> None:
             }
 
             .stage-shell {
-                min-height: 700px;
+                aspect-ratio: 5 / 6;
+                min-height: 520px;
             }
 
             .stage-overlay {
                 grid-template-columns: 1fr;
-                grid-template-rows: auto auto auto auto auto;
+                grid-template-rows: auto auto auto auto;
                 inset: 0.65rem;
             }
 
             .stage-card-scene,
             .stage-card-exits,
             .stage-card-npcs,
-            .stage-card-items,
-            .stage-card-story {
+            .stage-card-items {
                 grid-column: 1;
                 grid-row: auto;
                 width: auto;
@@ -684,25 +732,70 @@ def pill_markup(values: List[str], empty_text: str) -> str:
     return "".join(f"<span class='pill'>{escape_html_text(value)}</span>" for value in clean_values)
 
 
-def latest_story_text(runtime: AppRuntime, fallback_text: str) -> tuple[str, str]:
-    if runtime.game_over and runtime.ending_text:
-        return "结局", runtime.ending_text
+def plain_list_markup(values: List[str], empty_text: str) -> str:
+    clean_values = [str(value).strip() for value in values if str(value).strip()]
+    if not clean_values:
+        return f"<div class='plain-line'>{escape_html_text(empty_text)}</div>"
+    return "".join(f"<div class='plain-line'>{escape_html_text(value)}</div>" for value in clean_values)
 
-    for message in reversed(st.session_state.chat_history):
-        if message.get("role") != "assistant":
-            continue
-        content = str(message.get("content", "")).strip()
-        if content:
-            return "剧情", content
 
-    return "场景提示", fallback_text
+def localize_direction_label(value: Any) -> str:
+    """把常见英文方位词转换成中文。"""
+
+    raw = str(value or "").strip()
+    key = raw.lower().replace("_", "").replace("-", "").replace(" ", "")
+    mapping = {
+        "east": "东边",
+        "west": "西边",
+        "south": "南边",
+        "north": "北边",
+        "northeast": "东北边",
+        "northwest": "西北边",
+        "southeast": "东南边",
+        "southwest": "西南边",
+        "up": "上方",
+        "down": "下方",
+        "inside": "里面",
+        "outside": "外面",
+    }
+    return mapping.get(key, raw)
+
+
+def format_exit_label(direction: Any, description: Any) -> str:
+    """把出口信息格式化为更适合展示的中文菜单项。"""
+
+    direction_text = localize_direction_label(direction)
+    description_text = str(description or "").strip()
+    if direction_text in {"出口", "入口"}:
+        return f"{direction_text}：{description_text}" if description_text else direction_text
+    if description_text:
+        return f"{direction_text}：{description_text}"
+    return direction_text
+
+
+def render_sidebar_info_expander(
+    title: str,
+    values: List[str],
+    empty_text: str,
+    *,
+    use_pills: bool = True,
+) -> None:
+    """在左侧栏渲染可点击展开的信息区。"""
+
+    with st.sidebar.expander(title, expanded=False):
+        content_markup = pill_markup(values, empty_text) if use_pills else plain_list_markup(values, empty_text)
+        wrapper_class = "pill-wrap" if use_pills else "plain-list"
+        st.markdown(
+            f"<div class='{wrapper_class}'>{content_markup}</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def presentation_text(value: Any) -> str:
     text = str(value or "").strip()
     if text.startswith("回合执行失败:"):
         return "剧情生成暂时失败，请稍后重试或检查模型配置。"
-    return text
+    return text.replace("|", "\n\n")
 
 
 def render_stage_panel(runtime: AppRuntime) -> None:
@@ -711,22 +804,7 @@ def render_stage_panel(runtime: AppRuntime) -> None:
     actor = runtime.engine.world_state.get_character(runtime.actor_id)
     current_map = runtime.engine.world_state.get_map(actor.location)
     scene_text = description_public_text(current_map)
-    speaker, dialogue_text = latest_story_text(runtime, scene_text)
-    dialogue_text = presentation_text(dialogue_text)
     bg_uri = scene_background_uri(runtime.world_name, current_map.id)
-
-    characters = [
-        getattr(item, "name", str(item))
-        for item in runtime.engine.world_state.get_characters_at(actor.location)
-        if getattr(item, "id", "") != runtime.actor_id
-    ]
-    items = [getattr(item, "name", str(item)) for item in runtime.engine.world_state.get_items_at(actor.location)]
-
-    exit_labels: List[str] = []
-    for connection in getattr(current_map, "connections", []) or []:
-        direction = str(getattr(connection, "direction", "") or getattr(connection, "name", "") or "出口")
-        description = str(getattr(connection, "description", "") or getattr(connection, "target_map_id", "") or "")
-        exit_labels.append(f"{direction} · {description}" if description else direction)
 
     image_markup = (
         f'<img class="stage-bg" src="{html.escape(bg_uri)}" alt="scene" decoding="async" draggable="false">'
@@ -746,27 +824,40 @@ def render_stage_panel(runtime: AppRuntime) -> None:
             f'<div class="scene-meta">回合 {runtime.turn_id} · 玩家 {escape_html_text(actor.name)}</div>',
             f'<p class="scene-text">{format_html_text(scene_text)}</p>',
             "</section>",
-            '<section class="glass stage-card-exits">',
-            '<div class="eyeline">可通往地点</div>',
-            f'<div class="pill-wrap">{pill_markup(exit_labels, "当前没有可通往地点")}</div>',
-            "</section>",
-            '<section class="glass stage-card-npcs">',
-            '<div class="eyeline">在场角色</div>',
-            f'<div class="pill-wrap">{pill_markup(characters, "当前没有其他在场角色")}</div>',
-            "</section>",
-            '<section class="glass stage-card-items">',
-            '<div class="eyeline">可见物品</div>',
-            f'<div class="pill-wrap">{pill_markup(items, "当前没有可见物品")}</div>',
-            "</section>",
-            '<section class="glass stage-card-story">',
-            f'<div class="eyeline">{escape_html_text(speaker)}</div>',
-            f'<p class="scene-text">{format_html_text(dialogue_text)}</p>',
-            "</section>",
             "</div>",
             "</div>",
         ]
     )
     st.html(stage_markup)
+
+
+def render_sidebar_world_panels(runtime: AppRuntime) -> None:
+    """把地图相关信息放到左侧栏。"""
+
+    actor = runtime.engine.world_state.get_character(runtime.actor_id)
+    current_map = runtime.engine.world_state.get_map(actor.location)
+
+    characters = [
+        getattr(item, "name", str(item))
+        for item in runtime.engine.world_state.get_characters_at(actor.location)
+        if getattr(item, "id", "") != runtime.actor_id
+    ]
+    items = [getattr(item, "name", str(item)) for item in runtime.engine.world_state.get_items_at(actor.location)]
+
+    exit_labels: List[str] = []
+    for connection in getattr(current_map, "connections", []) or []:
+        direction = str(getattr(connection, "direction", "") or getattr(connection, "name", "") or "出口")
+        description = str(getattr(connection, "description", "") or getattr(connection, "target_map_id", "") or "")
+        exit_labels.append(format_exit_label(direction, description))
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(
+        f"<div class='eyeline'>当前场景</div><p class='scene-meta'>{escape_html_text(current_map.name)}</p>",
+        unsafe_allow_html=True,
+    )
+    render_sidebar_info_expander("在场角色", characters, "当前没有其他在场角色")
+    render_sidebar_info_expander("可通往地点", exit_labels, "当前没有可通往地点", use_pills=False)
+    render_sidebar_info_expander("可见物品", items, "当前没有可见物品")
 
 
 def ensure_session_state() -> None:
@@ -962,7 +1053,8 @@ def extract_player_visible_output(result: Dict[str, Any]) -> Dict[str, Any]:
     merger_payload = result.get("merger", {}) if isinstance(result.get("merger"), dict) else {}
     merger_text = str((merger_payload.get("llm_output") or {}).get("narrative_str", "")).strip()
 
-    text = aggregated_raw or extract_player_text(result)
+    streamed_text = join_story_segments([fragment["content"] for fragment in fragments])
+    text = streamed_text or aggregated_raw or extract_player_text(result)
     if text:
         return {
             "text": text,
@@ -1004,6 +1096,144 @@ def chunk_text_for_stream(text: str, *, chunk_size: int = STREAM_CHUNK_SIZE) -> 
         return []
     step = max(1, int(chunk_size))
     return [normalized[index : index + step] for index in range(0, len(normalized), step)]
+
+
+def join_story_segments(values: List[str]) -> str:
+    """把多个叙事片段按展示友好的段落形式拼接。"""
+
+    clean_values = [str(value).strip() for value in values if str(value).strip()]
+    return "\n\n".join(clean_values)
+
+
+def merge_narrative_stream_events(
+    events: List[Dict[str, Any]],
+    *,
+    fragments_by_id: Dict[str, Dict[str, str]],
+    fragment_order: List[str],
+) -> bool:
+    """把新增 narrative 流事件并入前端缓冲区。"""
+
+    changed = False
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        data = event.get("data", {})
+        if not isinstance(data, dict):
+            continue
+
+        fragment_id = str(data.get("fragment_id", "")).strip()
+        if not fragment_id:
+            continue
+
+        if fragment_id not in fragments_by_id:
+            fragments_by_id[fragment_id] = {
+                "fragment_id": fragment_id,
+                "source_kind": str(data.get("source_kind", "")),
+                "source_id": str(data.get("source_id", "")),
+                "content": "",
+            }
+            fragment_order.append(fragment_id)
+
+        event_name = str(event.get("event", ""))
+        if event_name == "narrative.fragment.delta":
+            delta = str(data.get("delta", ""))
+            if delta:
+                fragments_by_id[fragment_id]["content"] += delta
+                changed = True
+        elif event_name == "narrative.fragment.completed":
+            completed_text = str(data.get("content", "")).strip()
+            if completed_text and fragments_by_id[fragment_id].get("content", "") != completed_text:
+                fragments_by_id[fragment_id]["content"] = completed_text
+                changed = True
+
+    return changed
+
+
+def build_stream_preview_text(
+    *,
+    fragments_by_id: Dict[str, Dict[str, str]],
+    fragment_order: List[str],
+) -> str:
+    """把当前已接收的流式片段拼成前端预览文本。"""
+
+    return join_story_segments(
+        [fragments_by_id[fragment_id].get("content", "") for fragment_id in fragment_order]
+    )
+
+
+def render_live_story_panel(
+    placeholder,
+    text: str,
+    *,
+    is_streaming: bool,
+    label: Optional[str] = None,
+) -> None:
+    """在输入框下方渲染当前回合的实时剧情输出。"""
+
+    normalized_text = presentation_text(text)
+    has_text = bool(normalized_text.strip())
+    label_text = label or ("剧情生成中" if is_streaming else "本回合剧情")
+    body = normalized_text if has_text else "正在生成剧情..."
+    pending_class = " live-story-pending" if not has_text else ""
+    placeholder.markdown(
+        (
+            f"<div class='glass live-story-shell{pending_class}'>"
+            f"<div class='live-story-label'>{escape_html_text(label_text)}</div>"
+            f"<div class='live-story-body'>{format_html_text(body)}</div>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def stream_text_to_live_panel(
+    placeholder,
+    text: str,
+    *,
+    chunk_size: int,
+    delay_sec: float,
+) -> str:
+    """在没有后端流事件时，用前端分片方式平滑展示文本。"""
+
+    merged = ""
+    for chunk in chunk_text_for_stream(text, chunk_size=chunk_size):
+        if not chunk:
+            continue
+        merged += chunk
+        render_live_story_panel(placeholder, merged, is_streaming=True)
+        if delay_sec > 0:
+            time.sleep(delay_sec)
+    if merged:
+        render_live_story_panel(placeholder, merged, is_streaming=False)
+    return merged
+
+
+def latest_assistant_output() -> str:
+    """返回最近一条 assistant 剧情文本，用于输入框下方常驻展示。"""
+
+    for message in reversed(st.session_state.chat_history):
+        if message.get("role") != "assistant":
+            continue
+        content = str(message.get("content", "")).strip()
+        if content:
+            return content
+    return ""
+
+
+def render_current_turn_output_panel() -> None:
+    """在输入框下方常驻展示当前回合输出。"""
+
+    latest_output = latest_assistant_output()
+    if not latest_output:
+        return
+
+    output_placeholder = st.empty()
+    render_live_story_panel(
+        output_placeholder,
+        latest_output,
+        is_streaming=False,
+        label="当前回合输出",
+    )
 
 
 def render_chunks_safely(
@@ -1175,10 +1405,6 @@ def render_sidebar() -> Dict[str, Any]:
     rebuild_clicked = col_left.button("重新开始", use_container_width=True)
     clear_chat_clicked = col_right.button("清空剧情", use_container_width=True)
 
-    preview = read_world_preview(str(WORLD_DIR / selected_world))
-    if preview.get("turn_limit") is not None:
-        st.sidebar.caption(f"回合上限：{preview['turn_limit']}")
-
     return {
         "can_run": True,
         "world_name": selected_world,
@@ -1206,6 +1432,8 @@ def render_chat_history() -> None:
         content = presentation_text(message.get("content", ""))
         with st.chat_message(role):
             st.markdown(content)
+
+
 def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
     """执行单回合并把结果写入聊天与调试记录。"""
 
@@ -1274,16 +1502,39 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
     worker = threading.Thread(target=_run_turn_worker, daemon=True)
     worker.start()
 
-    progress_placeholder = st.empty()
-    progress_placeholder.info("正在生成剧情...")
+    live_story_placeholder = st.empty()
+    render_live_story_panel(live_story_placeholder, "", is_streaming=True)
+    stream_fragments_by_id: Dict[str, Dict[str, str]] = {}
+    stream_fragment_order: List[str] = []
+    streamed_text = ""
 
     while worker.is_alive():
-        _, narrative_cursor = collect_narrative_events(runtime, narrative_cursor)
+        new_events, narrative_cursor = collect_narrative_events(runtime, narrative_cursor)
+        if merge_narrative_stream_events(
+            new_events,
+            fragments_by_id=stream_fragments_by_id,
+            fragment_order=stream_fragment_order,
+        ):
+            streamed_text = build_stream_preview_text(
+                fragments_by_id=stream_fragments_by_id,
+                fragment_order=stream_fragment_order,
+            )
+            render_live_story_panel(live_story_placeholder, streamed_text, is_streaming=True)
         time.sleep(runtime.engine_poll_interval_sec)
 
     worker.join()
-    collect_narrative_events(runtime, narrative_cursor)
-    progress_placeholder.empty()
+    new_events, narrative_cursor = collect_narrative_events(runtime, narrative_cursor)
+    if merge_narrative_stream_events(
+        new_events,
+        fragments_by_id=stream_fragments_by_id,
+        fragment_order=stream_fragment_order,
+    ):
+        streamed_text = build_stream_preview_text(
+            fragments_by_id=stream_fragments_by_id,
+            fragment_order=stream_fragment_order,
+        )
+    if streamed_text:
+        render_live_story_panel(live_story_placeholder, streamed_text, is_streaming=False)
 
     if result_holder.get("error") is not None:
         exc = result_holder["error"]
@@ -1331,9 +1582,22 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
     )
 
     visible = extract_player_visible_output(result)
-    display_text = str(visible.get("text", ""))
+    display_text = str(visible.get("text", "")).strip()
     fragments = visible.get("fragments", []) if isinstance(visible.get("fragments"), list) else []
     aggregated_raw = str(visible.get("aggregated_raw", "")).strip()
+
+    if streamed_text.strip():
+        display_text = streamed_text.strip()
+        render_live_story_panel(live_story_placeholder, display_text, is_streaming=False)
+    elif display_text:
+        display_text = stream_text_to_live_panel(
+            live_story_placeholder,
+            display_text,
+            chunk_size=runtime.stream_chunk_size,
+            delay_sec=runtime.stream_chunk_delay_sec,
+        ).strip()
+    else:
+        live_story_placeholder.empty()
 
     st.session_state.chat_history.append(
         {
@@ -1501,7 +1765,7 @@ def render_action_input_panel(runtime: AppRuntime) -> Optional[str]:
             user_text = st.text_input(
                 "输入你的行动",
                 value="",
-                placeholder="例如：我检查书桌抽屉",
+                placeholder="可直接输入自然语言行动，例如：前往东边、我沿山道前往草庐",
                 label_visibility="collapsed",
                 disabled=disabled,
             )
@@ -1512,8 +1776,6 @@ def render_action_input_panel(runtime: AppRuntime) -> Optional[str]:
                 type="primary",
                 disabled=disabled,
             )
-    st.markdown("<div class='action-helper'>可直接输入自然语言行动，例如：去东边看看、我沿山道前往草庐。</div>", unsafe_allow_html=True)
-
     if submitted and user_text.strip():
         return user_text.strip()
     return None
@@ -1561,11 +1823,13 @@ def main() -> None:
 
     runtime: AppRuntime = st.session_state.runtime
 
+    render_sidebar_world_panels(runtime)
     render_stage_panel(runtime)
     st.markdown("<div class='action-heading'>行动输入</div>", unsafe_allow_html=True)
     user_text = render_action_input_panel(runtime)
     if user_text:
         handle_user_turn(runtime, user_text.strip())
+    render_current_turn_output_panel()
 
     if st.session_state.chat_history:
         with st.expander("剧情记录", expanded=False):
