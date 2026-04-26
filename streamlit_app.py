@@ -714,6 +714,60 @@ def description_public_text(entity: Any) -> str:
     return str(description or "")
 
 
+def current_scene_public_entry(runtime: AppRuntime) -> Dict[str, str]:
+    """返回当前场景 public 描述的前端展示文本。"""
+
+    actor = runtime.engine.world_state.get_character(runtime.actor_id)
+    current_map = runtime.engine.world_state.get_map(actor.location)
+    public_text = description_public_text(current_map).strip()
+    if not public_text:
+        return {"map_id": current_map.id, "map_name": current_map.name, "public_text": "", "entry_text": ""}
+    return {
+        "map_id": current_map.id,
+        "map_name": current_map.name,
+        "public_text": public_text,
+        "entry_text": f"进入场景：{current_map.name}\n{public_text}",
+    }
+
+
+def append_scene_public_to_output(display_text: str, scene_entry: Dict[str, str]) -> str:
+    """玩家进入新场景后，把该场景 public 描述补进本回合输出。"""
+
+    output = str(display_text or "").strip()
+    public_text = scene_entry.get("public_text", "").strip()
+    entry_text = scene_entry.get("entry_text", "").strip()
+    if not entry_text:
+        return output
+    if public_text and public_text in output:
+        return output
+    if entry_text in output:
+        return output
+    return f"{output}\n\n{entry_text}".strip()
+
+
+def append_current_scene_public_message(runtime: AppRuntime) -> None:
+    """初始化或清空剧情后，自动展示当前场景 public。"""
+
+    scene_entry = current_scene_public_entry(runtime)
+    entry_text = scene_entry.get("entry_text", "").strip()
+    if not entry_text:
+        return
+
+    st.session_state.chat_history.append(
+        {
+            "role": "assistant",
+            "content": entry_text,
+            "meta": {
+                "type": "scene_public",
+                "map_id": scene_entry.get("map_id", ""),
+                "map_name": scene_entry.get("map_name", ""),
+                "turn_id": runtime.turn_id,
+                "trace_id": runtime.trace_id,
+            },
+        }
+    )
+
+
 def scene_background_uri(world_name: str, map_id: str) -> str:
     file_name = SCENE_BACKGROUND_FILES.get(world_name, {}).get(map_id)
     if not file_name:
@@ -1480,6 +1534,8 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
         return
 
     st.session_state.chat_history.append({"role": "user", "content": user_text, "meta": {}})
+    actor_before_turn = runtime.engine.world_state.get_character(runtime.actor_id)
+    location_before_turn = str(getattr(actor_before_turn, "location", ""))
 
     io_start = len(runtime.io_records)
     with runtime.narrative_event_lock:
@@ -1599,6 +1655,15 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
     else:
         live_story_placeholder.empty()
 
+    actor_after_turn = runtime.engine.world_state.get_character(runtime.actor_id)
+    location_after_turn = str(getattr(actor_after_turn, "location", ""))
+    scene_entry_for_turn: Dict[str, str] = {}
+    if location_after_turn and location_after_turn != location_before_turn:
+        scene_entry_for_turn = current_scene_public_entry(runtime)
+        display_text = append_scene_public_to_output(display_text, scene_entry_for_turn)
+        if display_text:
+            render_live_story_panel(live_story_placeholder, display_text, is_streaming=False)
+
     st.session_state.chat_history.append(
         {
             "role": "assistant",
@@ -1609,6 +1674,7 @@ def handle_user_turn(runtime: AppRuntime, user_text: str) -> None:
                 "route": turn_record.get("route"),
                 "aggregated_raw": aggregated_raw,
                 "fragments": fragments,
+                "scene_public": scene_entry_for_turn,
             },
         }
     )
@@ -1822,6 +1888,8 @@ def main() -> None:
             st.session_state.debug_agent_name = ""
 
     runtime: AppRuntime = st.session_state.runtime
+    if should_build or sidebar_state.get("clear_chat_clicked") or not st.session_state.chat_history:
+        append_current_scene_public_message(runtime)
 
     render_sidebar_world_panels(runtime)
     render_stage_panel(runtime)
